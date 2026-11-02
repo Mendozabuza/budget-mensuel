@@ -1,0 +1,81 @@
+# Budget mensuel
+
+Petite web app de budget mensuel guidée, pensée pour iPhone. HTML/CSS/JS sans framework, sans serveur, sans dépendance.
+
+- **Parcours de départ en 4 étapes** : ce qui rentre chaque mois (salaire, APL, prime d’activité…), ce qui sort chaque mois (loyer, factures, abonnements…), le budget du quotidien (courses, loisirs…) et l’épargne. À la fin, un récapitulatif dit si le plan tient.
+- **Rentrées et dépenses fixes comptées automatiquement** chaque mois. Leur montant peut être ajusté pour un mois seulement (ex. : APL qui varie) ou pour tous les mois suivants.
+- **Mois** : ce qu’il vous reste, un repère « environ X par jour », le détail rentrées / fixes / quotidien / épargne, l’avancement de chaque budget et des conseils (budget dépassé, dépenses trop rapides, objectif d’épargne…).
+- **Ajouter** : dépense du quotidien, rentrée ponctuelle (prime, remboursement…) ou épargne (mettre de côté / retirer).
+- **Épargne** : total épargné, objectif du mois, historique mois par mois avec l’argent non dépensé.
+- **Historique** : opérations notées du mois ; toucher une ligne pour la modifier.
+- **Réglages** : tout modifier, **Exporter / Importer** en JSON, tout effacer.
+- Fonctionne **hors ligne** une fois chargée (service worker) et s’installe sur l’écran d’accueil.
+
+## Confidentialité
+
+Aucune donnée n’est envoyée nulle part : il n’y a ni serveur, ni compte, ni statistiques, ni ressource externe.
+Les données sont enregistrées dans le `localStorage` du navigateur, **sur l’appareil uniquement**.
+Le dépôt ne contient que du code et des noms de catégories génériques proposés au démarrage.
+
+## Installation sur iPhone
+
+1. Ouvrir l’adresse GitHub Pages dans **Safari**.
+2. Bouton **Partager** → **Sur l’écran d’accueil**.
+3. Lancer l’app depuis l’icône.
+
+> Important : Safari peut effacer les données d’un site non utilisé depuis plusieurs semaines lorsqu’il n’est pas ajouté à l’écran d’accueil. Installez l’app sur l’écran d’accueil et **exportez régulièrement** une sauvegarde (Réglages → Exporter → « Enregistrer dans Fichiers »).
+> Les données de l’app installée et celles de Safari sont séparées : pour passer de l’une à l’autre, utilisez Exporter / Importer.
+
+## Publication sur GitHub Pages
+
+1. Pousser ces fichiers à la racine d’un dépôt GitHub.
+2. **Settings → Pages** → Source : *Deploy from a branch*, branche `main`, dossier `/ (root)`.
+3. L’app est disponible à `https://<utilisateur>.github.io/<dépôt>/`.
+
+Les mises à jour poussées sur GitHub sont récupérées automatiquement au lancement suivant quand l’appareil est en ligne ; hors ligne, l’app utilise la dernière version mise en cache.
+
+## Tester en local
+
+```bash
+python3 -m http.server 8000
+```
+
+Puis ouvrir http://localhost:8000.
+
+## Format du fichier exporté
+
+```json
+{
+  "app": "budget-mensuel",
+  "exportedAt": "2026-01-31T18:00:00.000Z",
+  "version": 2,
+  "currency": "EUR",
+  "savingsTarget": 5000,
+  "savingsStart": 0,
+  "incomes": [
+    { "id": "i1", "name": "Salaire", "amount": 150000, "from": "2026-01", "until": null }
+  ],
+  "fixed": [
+    { "id": "f1", "name": "Loyer", "amount": 60000, "from": "2026-01", "until": null }
+  ],
+  "categories": [
+    { "id": "c1", "name": "Courses", "budget": 30000, "color": "#2f855a" }
+  ],
+  "overrides": { "2026-02": { "i1": 145000 } },
+  "transactions": [
+    { "id": "t1", "type": "expense", "date": "2026-01-12", "amount": 2450, "categoryId": "c1", "note": "Exemple" },
+    { "id": "t2", "type": "income", "date": "2026-01-20", "amount": 10000, "categoryId": null, "note": "" },
+    { "id": "t3", "type": "saving", "date": "2026-01-25", "amount": 5000, "categoryId": null, "note": "" }
+  ]
+}
+```
+
+- Montants en **centimes** (`2450` = 24,50 €).
+- `incomes` / `fixed` : comptés chaque mois de `from` à `until` (inclus, `null` = sans fin).
+- `overrides` : montant d’une rentrée ou dépense fixe pour un mois précis.
+- `type` d’opération : `expense` (dépense du quotidien), `income` (rentrée ponctuelle), `saving` (mise de côté), `withdrawal` (retrait d’épargne).
+- Les fichiers de la version 1 s’importent aussi.
+
+L’import vérifie la structure du fichier et remplace les données présentes sur l’appareil après confirmation.
+
+Les fichiers exportés contiennent vos finances : ne les ajoutez pas au dépôt (le `.gitignore` exclut `budget-*.json`).

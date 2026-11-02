@@ -1,0 +1,4 @@
+# Sauvegardes exportées depuis l’app : données personnelles, ne pas publier
+budget-*.json
+.DS_Store
+.claude/
