@@ -179,6 +179,7 @@
           amount: r.amount,
           from: isMonth(r.from) ? r.from : cm,
           until: isMonth(r.until) ? r.until : null,
+          day: Number.isInteger(r.day) && r.day >= 1 && r.day <= 31 ? r.day : null,
         };
       });
     };
@@ -327,6 +328,7 @@
       if (e) {
         byId.delete(item.id);
         item.name = e.name;
+        item.day = e.day ?? null;
         if (e.amount !== item.amount) setRecurringFrom(item, cm, e.amount);
         out.push(item);
       } else if (item.from < cm) {
@@ -336,18 +338,23 @@
         removeOverrides(item.id);
       }
     }
-    for (const e of byId.values()) out.push({ id: e.id, name: e.name, amount: e.amount, from: cm, until: null });
+    for (const e of byId.values()) out.push({ id: e.id, name: e.name, amount: e.amount, from: cm, until: null, day: e.day ?? null });
     return out;
   }
 
   /* ---------- Éditeur de listes (rentrées, dépenses fixes, budgets) ---------- */
 
+  /** Jour facultatif où une rentrée arrive / une dépense est prélevée. */
+  const DAY = { income: { dayLabel: 'Arrive' }, fixed: { dayLabel: 'Prélevé' } };
+
   function rowHTML(item, o) {
     const amount = item.amount ?? item.budget ?? 0;
+    const nameInput = `<input class="e-name" value="${esc(item.name)}" placeholder="${esc(o.placeholder || 'Nom')}" maxlength="40" autocomplete="off" aria-label="Nom">`;
     return `
       <div class="erow${o.toggle && !item.on ? ' off' : ''}" data-id="${esc(item.id)}"${item.color ? ` data-color="${esc(item.color)}"` : ''}>
         ${o.toggle ? `<input type="checkbox" class="e-on" ${item.on ? 'checked' : ''} aria-label="Utiliser ${esc(item.name)}">` : ''}
-        <input class="e-name" value="${esc(item.name)}" placeholder="${esc(o.placeholder || 'Nom')}" maxlength="40" autocomplete="off" aria-label="Nom">
+        ${o.dayLabel ? `<div class="e-main">${nameInput}
+          <label class="e-day">${o.dayLabel} le <input class="e-day-in" inputmode="numeric" pattern="[0-9]*" maxlength="2" placeholder="…" value="${item.day ?? ''}" autocomplete="off" aria-label="Jour du mois (facultatif)"> du mois</label></div>` : nameInput}
         <span class="money"><input class="e-amount" inputmode="decimal" placeholder="0" value="${centsToInput(amount)}" autocomplete="off" aria-label="Montant par mois"><span class="cur">${esc(currencySymbol(o.currency))}</span></span>
         ${o.toggle ? '' : '<button type="button" class="e-del" aria-label="Retirer cette ligne"><svg viewBox="0 0 24 24"><path d="M6 6l12 12M18 6L6 18"/></svg></button>'}
       </div>`;
@@ -419,7 +426,11 @@
       }
       const amount = raw === '' ? 0 : parseAmount(raw);
       if (Number.isNaN(amount)) return { error: `Montant invalide pour « ${name} » (exemple : 12,50).` };
-      items.push({ id: row.dataset.id, name: name.slice(0, 40), amount, color: row.dataset.color });
+      const dayEl = $('.e-day-in', row);
+      const rawDay = dayEl ? dayEl.value.trim() : '';
+      const day = rawDay ? Number(rawDay) : null;
+      if (rawDay && !(Number.isInteger(day) && day >= 1 && day <= 31)) return { error: `Jour invalide pour « ${name} » : mettez un nombre entre 1 et 31, ou laissez vide.` };
+      items.push({ id: row.dataset.id, name: name.slice(0, 40), amount, day, color: row.dataset.color });
     }
     if (items.length < min) return { error: `Gardez au moins une ligne dans « ${what} ».` };
     return { items };
@@ -529,12 +540,12 @@
     } else if (s === 1) {
       title = 'Ce qui rentre chaque mois';
       intro = 'Salaire, aides (APL, prime d’activité…), pension… Indiquez le montant habituel. Si une aide varie, mettez une estimation : vous pourrez l’ajuster chaque mois.';
-      body = `${editorHTML('income', d.incomes, { ...o, placeholder: 'Nom de la rentrée' })}
+      body = `${editorHTML('income', d.incomes, { ...o, ...DAY.income, placeholder: 'Nom de la rentrée' })}
         <p class="live" id="live"></p>`;
     } else if (s === 2) {
       title = 'Ce qui sort chaque mois';
       intro = 'Les dépenses qui tombent tous les mois quoi qu’il arrive : loyer, factures, abonnements, assurances, crédit… Les courses, on les voit à l’étape suivante.';
-      body = `${editorHTML('fixed', d.fixed, { ...o, placeholder: 'Nom de la dépense' })}
+      body = `${editorHTML('fixed', d.fixed, { ...o, ...DAY.fixed, placeholder: 'Nom de la dépense' })}
         <p class="live" id="live"></p>`;
     } else if (s === 3) {
       title = 'Votre budget du quotidien';
@@ -574,8 +585,8 @@
 
     const root = $('#setup');
     const live = () => updateSetupLive(root);
-    if (s === 1) bindEditor(root, 'income', { ...o, suggestions: SUGGEST.income, placeholder: 'Nom de la rentrée' }, live);
-    if (s === 2) bindEditor(root, 'fixed', { ...o, suggestions: SUGGEST.fixed, placeholder: 'Nom de la dépense' }, live);
+    if (s === 1) bindEditor(root, 'income', { ...o, ...DAY.income, suggestions: SUGGEST.income, placeholder: 'Nom de la rentrée' }, live);
+    if (s === 2) bindEditor(root, 'fixed', { ...o, ...DAY.fixed, suggestions: SUGGEST.fixed, placeholder: 'Nom de la dépense' }, live);
     if (s === 3) bindEditor(root, 'cat', { ...o, toggle: true, withColor: true, placeholder: 'Nom de la catégorie' }, live);
     if (s === 4) root.addEventListener('input', live);
     if (s > 0) live();
@@ -632,7 +643,7 @@
       const key = ui.step === 1 ? 'income' : 'fixed';
       const r = readEditor(root, key, { what: ui.step === 1 ? 'Rentrées' : 'Dépenses fixes' });
       if (r.error) return r.error;
-      d[ui.step === 1 ? 'incomes' : 'fixed'] = r.items.map(({ id, name, amount }) => ({ id, name, amount }));
+      d[ui.step === 1 ? 'incomes' : 'fixed'] = r.items.map(({ id, name, amount, day }) => ({ id, name, amount, day }));
     } else if (ui.step === 3) {
       const r = readEditor(root, 'cat', { toggle: true, min: 1, what: 'Budget du quotidien' });
       if (r.error) return r.error;
@@ -914,6 +925,44 @@
     return out.slice(0, 3);
   }
 
+  /** Jour réel dans le mois (un « 31 » tombe le dernier jour des mois courts). */
+  const dayIn = (item, month) => Math.min(item.day, daysInMonth(month));
+
+  /** À venir ce mois-ci : prélèvements et rentrées datés, avec ce qui reste à passer. */
+  function upcomingHTML(s, month) {
+    if (month !== currentMonth()) return '';
+    const all = [
+      ...s.incomes.map((x) => ({ ...x, kind: 'income' })),
+      ...s.fixed.map((x) => ({ ...x, kind: 'fixed' })),
+    ].filter((x) => x.amount > 0);
+    const dated = all.filter((x) => x.item.day)
+      .map((x) => ({ ...x, d: dayIn(x.item, month) }))
+      .sort((a, b) => a.d - b.d || (a.kind === 'income' ? -1 : 1));
+    if (!dated.length) return '';
+
+    const today = new Date().getDate();
+    const toCome = dated.filter((x) => x.d >= today); // le jour même : pas forcément encore passé
+    const out = sum(toCome.filter((x) => x.kind === 'fixed'), (x) => x.amount);
+    const inc = sum(toCome.filter((x) => x.kind === 'income'), (x) => x.amount);
+    const when = (d) => (d < today ? 'passé' : d === today ? 'aujourd’hui' : d === today + 1 ? 'demain' : `dans ${d - today} jours`);
+    const undated = all.filter((x) => !x.item.day);
+
+    return `
+      <section class="block">
+        <h2 class="sec">À venir ce mois-ci</h2>
+        <p class="up-sum">${out ? `Encore <b>${money(out)}</b> de prélèvements d’ici la fin du mois.` : 'Tous vos prélèvements datés sont passés.'}${inc ? ` Et <b class="pos">${money(inc)}</b> de rentrées à venir.` : ''}</p>
+        <div class="up-list">
+          ${dated.map((x) => `
+            <div class="up-row${x.d < today ? ' past' : ''}">
+              <span class="up-day">${x.d}</span>
+              <span class="up-name">${esc(x.item.name)}<small>${when(x.d)}</small></span>
+              <span class="num${x.kind === 'income' ? ' pos' : ''}">${x.kind === 'income' ? '+' : '−'}${money(x.amount)}</span>
+            </div>`).join('')}
+        </div>
+        ${undated.length ? `<p class="note">Sans date : ${undated.map((x) => esc(x.item.name)).join(', ')}. <button type="button" class="link inline" data-go="settings">Ajouter le jour dans Réglages</button></p>` : ''}
+      </section>`;
+  }
+
   function renderMonth() {
     const m = ui.month;
     const cm = currentMonth();
@@ -933,7 +982,7 @@
     const recLines = (list, kind) => list.length
       ? list.map(({ item, amount, changed }) => `
           <button type="button" class="line rec" data-kind="${kind}" data-id="${esc(item.id)}">
-            <span>${esc(item.name)}${changed ? ' <small>(ajusté)</small>' : ''}</span>
+            <span>${esc(item.name)}${item.day ? ` <small>le ${dayIn(item, m)}</small>` : ''}${changed ? ' <small>(ajusté)</small>' : ''}</span>
             <span class="num">${money(amount)}<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M9 6l6 6-6 6"/></svg></span>
           </button>`).join('')
       : `<p class="note">Aucune ligne. <button type="button" class="link inline" data-go="settings">Ajouter dans Réglages</button></p>`;
@@ -996,6 +1045,8 @@
         <div class="line flowrow"><span>Épargne</span><span class="num">${s.savedNet > 0 ? '−' : s.savedNet < 0 ? '+' : ''}${money(Math.abs(s.savedNet))}</span></div>
         <div class="line total"><span>Il reste</span><span class="num${s.remaining < 0 ? ' neg' : ''}">${money(s.remaining)}</span></div>
       </section>
+
+      ${upcomingHTML(s, m)}
 
       ${pace ? `
         <section class="block">
@@ -1401,11 +1452,11 @@
     $('#view-settings').innerHTML = `
       <section class="block">
         <h2 class="sec">Rentrées chaque mois <span class="muted" id="t-income"></span></h2>
-        ${editorHTML('income', active(state.incomes), { ...o, placeholder: 'Nom de la rentrée' })}
+        ${editorHTML('income', active(state.incomes), { ...o, ...DAY.income, placeholder: 'Nom de la rentrée' })}
       </section>
       <section class="block">
         <h2 class="sec">Dépenses fixes chaque mois <span class="muted" id="t-fixed"></span></h2>
-        ${editorHTML('fixed', active(state.fixed), { ...o, placeholder: 'Nom de la dépense' })}
+        ${editorHTML('fixed', active(state.fixed), { ...o, ...DAY.fixed, placeholder: 'Nom de la dépense' })}
       </section>
       <section class="block">
         <h2 class="sec">Budget du quotidien <span class="muted" id="t-cat"></span></h2>
@@ -1458,8 +1509,8 @@
       });
     };
 
-    bindEditor(root, 'income', { ...o, suggestions: SUGGEST.income, placeholder: 'Nom de la rentrée' }, refresh);
-    bindEditor(root, 'fixed', { ...o, suggestions: SUGGEST.fixed, placeholder: 'Nom de la dépense' }, refresh);
+    bindEditor(root, 'income', { ...o, ...DAY.income, suggestions: SUGGEST.income, placeholder: 'Nom de la rentrée' }, refresh);
+    bindEditor(root, 'fixed', { ...o, ...DAY.fixed, suggestions: SUGGEST.fixed, placeholder: 'Nom de la dépense' }, refresh);
     bindEditor(root, 'cat', {
       ...o,
       suggestions: SUGGEST.cat,

@@ -386,6 +386,11 @@ legend { font-size: 14px; color: var(--muted); margin-bottom: 10px; padding: 0; 
 .erow .money:focus-within { outline: 1.5px solid var(--text); }
 .erow input[type="checkbox"] { width: 22px; height: 22px; margin: 0; accent-color: var(--text); flex: none; }
 .erow.off .e-name, .erow.off .money { opacity: .4; }
+.e-main { flex: 1; min-width: 0; display: flex; flex-direction: column; padding: 6px 0; }
+.e-main .e-name { width: 100%; padding: 4px 0 2px; }
+.e-day { font-size: 13px; color: var(--muted); }
+.e-day-in { width: 2.4em; padding: 0; border: 0; border-bottom: 1px solid var(--line); border-radius: 0; background: none; color: var(--text); text-align: center; outline: none; }
+.e-day-in:focus { border-bottom-color: var(--text); }
 .e-del { width: 36px; height: 36px; display: grid; place-items: center; flex: none; margin-right: -8px; background: none; border: 0; border-radius: 50%; color: var(--muted); }
 .e-del svg { width: 18px; height: 18px; }
 .e-del:active { background: var(--tap); }
@@ -487,6 +492,16 @@ dialog h2 { font-size: 20px; font-weight: 600; }
   transition: opacity .2s, transform .2s;
 }
 .toast.show { opacity: 1; transform: translate(-50%, 0); }
+
+/* ---------- À venir ce mois-ci ---------- */
+
+.up-sum { margin-bottom: 8px; }
+.up-row { display: flex; align-items: center; gap: 14px; min-height: 52px; border-bottom: 1px solid var(--line); }
+.up-row:last-child { border-bottom: 0; }
+.up-day { width: 34px; height: 34px; flex: none; display: grid; place-items: center; border-radius: 50%; background: var(--soft); font-size: 14px; font-weight: 600; font-variant-numeric: tabular-nums; }
+.up-name { flex: 1; min-width: 0; display: flex; flex-direction: column; line-height: 1.25; }
+.up-name small { font-size: 13px; color: var(--muted); }
+.up-row.past { opacity: .45; }
 
 /* ---------- Transitions ---------- */
 
