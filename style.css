@@ -30,6 +30,7 @@
 }
 
 * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+html { touch-action: manipulation; } /* pas de zoom au double-tap */
 [hidden] { display: none !important; }
 
 html, body {

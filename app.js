@@ -1580,7 +1580,16 @@
     }
   }
 
+  /** Bloque le zoom (pincement à deux doigts), comme dans une app : Safari ignore user-scalable=no. */
+  function blockZoom() {
+    for (const type of ['gesturestart', 'gesturechange', 'gestureend']) {
+      document.addEventListener(type, (e) => e.preventDefault(), { passive: false });
+    }
+    document.addEventListener('touchmove', (e) => { if (e.touches.length > 1) e.preventDefault(); }, { passive: false });
+  }
+
   function init() {
+    blockZoom();
     state = load();
     if (state) save(); // enregistre au format courant (migration des anciennes versions)
 
