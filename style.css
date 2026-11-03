@@ -454,15 +454,19 @@ legend { font-size: 14px; color: var(--muted); margin-bottom: 10px; padding: 0; 
 
 /* ---------- Fenêtre et toast ---------- */
 
+/* Fenêtre façon iPhone : collée en bas, au-dessus du clavier (--kb, calculé en JS). */
 dialog {
-  width: min(420px, calc(100% - 32px));
-  padding: 24px 20px 16px;
+  width: 100%;
+  max-width: 560px;
+  margin: auto auto var(--kb, 0px);
+  padding: 24px 20px calc(16px + env(safe-area-inset-bottom));
   border: 0;
-  border-radius: 16px;
+  border-radius: 16px 16px 0 0;
   background: var(--bg);
   color: var(--text);
 }
 dialog::backdrop { background: rgba(0, 0, 0, .45); }
+@media (prefers-color-scheme: dark) { dialog { background: #1c1c1e; } } /* comme les fenêtres iPhone, se détache du fond noir */
 dialog h2 { font-size: 20px; font-weight: 600; }
 
 .toast {
@@ -482,3 +486,33 @@ dialog h2 { font-size: 20px; font-weight: 600; }
   transition: opacity .2s, transform .2s;
 }
 .toast.show { opacity: 1; transform: translate(-50%, 0); }
+
+/* ---------- Transitions ---------- */
+
+body { overflow-x: clip; } /* les glissements ne créent pas de défilement horizontal */
+.step-ghost { position: fixed; inset: 0; overflow: hidden; background: var(--bg); pointer-events: none; }
+.setup.pushing { position: relative; z-index: 2; min-height: 100vh; min-height: 100dvh; background: var(--bg); }
+
+@media (prefers-reduced-motion: no-preference) {
+  dialog[open] { animation: sheet-up .34s cubic-bezier(.2, .8, .2, 1); }
+  dialog[open]::backdrop { animation: fade-in .3s ease-out; }
+  dialog.closing { animation: sheet-down .24s ease-in forwards; }
+  dialog.closing::backdrop { animation: fade-out .24s ease-in forwards; }
+
+  /* Les graphiques se remplissent à l'ouverture */
+  .stack span, .share-bar i { transform-origin: left; animation: grow-x .5s cubic-bezier(.2, .8, .2, 1) backwards; }
+  .stack span:nth-child(2) { animation-delay: .08s; }
+  .stack span:nth-child(3) { animation-delay: .16s; }
+  .stack span:nth-child(4) { animation-delay: .24s; }
+  .share-row:nth-child(2) i { animation-delay: .05s; }
+  .share-row:nth-child(3) i { animation-delay: .1s; }
+  .share-row:nth-child(n+4) i { animation-delay: .15s; }
+  .ch-inc, .ch-out { transform-box: fill-box; transform-origin: bottom; animation: grow-y .45s cubic-bezier(.2, .8, .2, 1) backwards; }
+  .ch-line, .ch-dot, .ch-save-line, .ch-save-area, .ch-save-dot { animation: fade-in .5s .15s ease-out backwards; }
+}
+@keyframes sheet-up { from { transform: translateY(100%); } }
+@keyframes sheet-down { to { transform: translateY(100%); } }
+@keyframes fade-in { from { opacity: 0; } }
+@keyframes fade-out { to { opacity: 0; } }
+@keyframes grow-x { from { transform: scaleX(0); } }
+@keyframes grow-y { from { transform: scaleY(0); } }

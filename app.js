@@ -124,6 +124,13 @@
     return String(s).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
   }
 
+  /* Animations : désactivées si l'iPhone est réglé sur « Réduire les animations ». */
+  const EASE = 'cubic-bezier(.2, .8, .2, 1)';
+  const motionOK = () => !!Element.prototype.animate && !matchMedia('(prefers-reduced-motion: reduce)').matches;
+  function animate(el, frames, opts) {
+    if (el && motionOK()) el.animate(frames, { easing: EASE, ...opts });
+  }
+
   const plural = (n, word) => `${n} ${word}${n > 1 ? 's' : ''}`;
   const sum = (arr, f) => arr.reduce((s, x) => s + f(x), 0);
 
@@ -471,6 +478,36 @@
 
   const STEP_COUNT = 4;
 
+  /** Change d'étape : la nouvelle page pousse l'ancienne, comme sur iPhone (retour : l'inverse). */
+  function goStep(dir) {
+    const root = $('#setup');
+    let ghost = null;
+    if (motionOK()) {
+      // Copie figée de l'étape actuelle, avec ce qui a été saisi, pour la faire glisser.
+      const copy = root.cloneNode(true);
+      copy.removeAttribute('id');
+      const from = root.querySelectorAll('input, select');
+      copy.querySelectorAll('input, select').forEach((el, i) => { el.value = from[i].value; el.checked = from[i].checked; });
+      copy.style.cssText = `position:absolute;left:0;right:0;top:${-window.scrollY}px`;
+      ghost = document.createElement('div');
+      ghost.className = 'step-ghost';
+      ghost.setAttribute('aria-hidden', 'true');
+      ghost.style.zIndex = dir > 0 ? 1 : 3;
+      ghost.appendChild(copy);
+      document.body.appendChild(ghost);
+    }
+    ui.step += dir;
+    renderSetup();
+    window.scrollTo(0, 0);
+    if (!ghost) return;
+    const opts = { duration: 350, easing: EASE };
+    root.classList.add('pushing');
+    root.animate([{ transform: `translateX(${dir > 0 ? 100 : -30}%)` }, { transform: 'none' }], opts);
+    const end = () => { ghost.remove(); root.classList.remove('pushing'); };
+    ghost.animate([{ transform: 'none' }, { transform: `translateX(${dir > 0 ? -30 : 100}%)` }], opts).onfinish = end;
+    setTimeout(end, 500); // au cas où l'animation serait suspendue (app mise en arrière-plan)
+  }
+
   function renderSetup() {
     const d = ui.draft;
     const s = ui.step;
@@ -547,9 +584,7 @@
       const err = readStep();
       if (err) { $('#setup-error').textContent = err; return; }
       if (ui.step < STEP_COUNT) {
-        ui.step += 1;
-        renderSetup();
-        window.scrollTo(0, 0);
+        goStep(1);
       } else {
         finishSetup();
       }
@@ -557,9 +592,7 @@
     if (s > 0) {
       $('#setup-back').addEventListener('click', () => {
         readStep(); // garde ce qui est valide, sans bloquer le retour
-        ui.step -= 1;
-        renderSetup();
-        window.scrollTo(0, 0);
+        goStep(-1);
       });
     }
     if (s === 0) {
@@ -654,6 +687,16 @@
     $$('.tab').forEach((t) => t.classList.toggle('active', t.dataset.view === view));
     render();
     window.scrollTo(0, 0);
+    animate($(`#view-${view}`), [{ opacity: 0, transform: 'translateY(10px)' }, { opacity: 1, transform: 'none' }], { duration: 260 });
+  }
+
+  /** Mois précédent / suivant : le contenu glisse dans le sens du mois. */
+  function goMonth(dir) {
+    ui.month = shiftMonth(ui.month, dir);
+    render();
+    const frames = (d) => [{ opacity: 0, transform: `translateX(${d}px)` }, { opacity: 1, transform: 'none' }];
+    animate($(`#view-${ui.view}`), frames(dir * 60), { duration: 280 });
+    animate($('#title'), frames(dir * 16), { duration: 240 });
   }
 
   function render() {
@@ -785,8 +828,8 @@
     const bars = data.map((d, i) => {
       const cx = slot * i + slot / 2;
       return `
-        <rect class="ch-inc" x="${fx(cx - bw - 1)}" y="${fx(y(d.inc))}" width="${fx(bw)}" height="${fx(y(0) - y(d.inc))}" rx="3"/>
-        <rect class="ch-out${d.out > d.inc ? ' over' : ''}" x="${fx(cx + 1)}" y="${fx(y(d.out))}" width="${fx(bw)}" height="${fx(y(0) - y(d.out))}" rx="3"/>
+        <rect class="ch-inc" style="animation-delay:${i * 50}ms" x="${fx(cx - bw - 1)}" y="${fx(y(d.inc))}" width="${fx(bw)}" height="${fx(y(0) - y(d.inc))}" rx="3"/>
+        <rect class="ch-out${d.out > d.inc ? ' over' : ''}" style="animation-delay:${i * 50 + 25}ms" x="${fx(cx + 1)}" y="${fx(y(d.out))}" width="${fx(bw)}" height="${fx(y(0) - y(d.out))}" rx="3"/>
         <text x="${fx(cx)}" y="${H - 4}" text-anchor="middle"${d.m === cm ? ' class="ch-strong"' : ''}>${esc(monthShort(d.m))}</text>`;
     }).join('');
 
@@ -1030,16 +1073,47 @@
     render();
   }
 
+  /** Referme la fenêtre en la faisant redescendre. */
+  function closeDialog() {
+    const dlg = $('#dlg');
+    if (!dlg.open || dlg.classList.contains('closing')) return;
+    if (!motionOK()) { dlg.close(); return; }
+    dlg.classList.add('closing');
+    let done = false;
+    const end = () => { if (done) return; done = true; dlg.classList.remove('closing'); dlg.close(); };
+    dlg.addEventListener('animationend', end, { once: true });
+    setTimeout(end, 400);
+  }
+
+  /** Garde la fenêtre au-dessus du clavier de l'iPhone. */
+  function followKeyboard() {
+    const vv = window.visualViewport;
+    if (!vv) return;
+    const dlg = $('#dlg');
+    const place = () => {
+      const hidden = Math.max(0, window.innerHeight - vv.height - vv.offsetTop);
+      dlg.style.setProperty('--kb', `${hidden}px`);
+    };
+    vv.addEventListener('resize', place);
+    vv.addEventListener('scroll', place);
+  }
+
   function bindDialog() {
     const dlg = $('#dlg');
+    followKeyboard();
+    dlg.addEventListener('cancel', (e) => { e.preventDefault(); closeDialog(); }); // touche Échap
+    dlg.addEventListener('click', (e) => { // toucher en dehors de la fenêtre
+      const r = dlg.getBoundingClientRect();
+      if (e.target === dlg && (e.clientY < r.top || e.clientY > r.bottom || e.clientX < r.left || e.clientX > r.right)) closeDialog();
+    });
     $('#dlg-form').addEventListener('submit', (e) => {
       e.preventDefault();
       const choice = e.submitter ? e.submitter.value : 'month';
-      if (choice === 'cancel' || !dlgTarget) { dlg.close(); return; }
+      if (choice === 'cancel' || !dlgTarget) { closeDialog(); return; }
       const amount = readMoneyInput($('#dlg-amount'));
       if (Number.isNaN(amount)) { $('#dlg-error').textContent = 'Montant invalide (exemple : 12,50).'; return; }
       const { item, month } = dlgTarget;
-      dlg.close();
+      closeDialog();
       dlgTarget = null;
       if (choice === 'always') {
         setRecurringFrom(item, month, amount);
@@ -1514,8 +1588,8 @@
       ui.editingId = null;
       show(t.dataset.view);
     }));
-    $('#prev-month').addEventListener('click', () => { ui.month = shiftMonth(ui.month, -1); render(); });
-    $('#next-month').addEventListener('click', () => { ui.month = shiftMonth(ui.month, 1); render(); });
+    $('#prev-month').addEventListener('click', () => goMonth(-1));
+    $('#next-month').addEventListener('click', () => goMonth(1));
     bindDialog();
 
     $('#import-file').addEventListener('change', (e) => {
