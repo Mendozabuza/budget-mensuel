@@ -2,7 +2,8 @@
 
 Petite web app de budget mensuel guidée, pensée pour iPhone. HTML/CSS/JS sans framework, sans serveur, sans dépendance.
 
-- **Parcours de départ en 4 étapes** : ce qui rentre chaque mois (salaire, APL, prime d’activité…), ce qui sort chaque mois (loyer, factures, abonnements…), le budget du quotidien (courses, loisirs…) et l’épargne. À la fin, un récapitulatif dit si le plan tient.
+- **Parcours de départ en 4 étapes** : ce qui rentre chaque mois (salaire, APL, prime d’activité…), ce qui sort chaque mois (loyer, factures, abonnements…), les catégories du quotidien (courses, loisirs…), puis un plan proposé par l’app.
+- **Répartir mon mois** : l’app propose combien mettre de côté et combien prévoir pour chaque catégorie, selon trois plans : *Prudent* (risque faible de finir le mois à court, gros coussin), *Équilibré* et *Effort* (risque modéré, on épargne davantage). Les montants proposés sont arrondis à la dizaine ; le reste forme un coussin pour les imprévus. Après quelques mois, les budgets suivent les dépenses réelles. Une nouvelle proposition est faite chaque mois. L’app ne conseille pas de placement.
 - **Rentrées et dépenses fixes comptées automatiquement** chaque mois. Leur montant peut être ajusté pour un mois seulement (ex. : APL qui varie) ou pour tous les mois suivants.
 - **Mois** : ce qu’il vous reste, un repère « environ X par jour », le détail rentrées / fixes / quotidien / épargne, les prélèvements et rentrées encore à venir (si leur jour est indiqué), l’avancement de chaque budget et des conseils (budget dépassé, dépenses trop rapides, objectif d’épargne…).
 - **Graphiques** (dessinés par l’app, sans bibliothèque, fonctionnent hors ligne) : où va l’argent du mois, rythme des dépenses face au budget, répartition du quotidien par catégorie, rentrées et dépenses des 6 derniers mois, évolution de l’épargne.
@@ -63,6 +64,8 @@ Puis ouvrir http://localhost:8000.
     { "id": "c1", "name": "Courses", "budget": 30000, "color": "#2f855a" }
   ],
   "overrides": { "2026-02": { "i1": 145000 } },
+  "plan": "equilibre",
+  "planMonth": "2026-01",
   "transactions": [
     { "id": "t1", "type": "expense", "date": "2026-01-12", "amount": 2450, "categoryId": "c1", "note": "Exemple" },
     { "id": "t2", "type": "income", "date": "2026-01-20", "amount": 10000, "categoryId": null, "note": "" },
@@ -74,6 +77,7 @@ Puis ouvrir http://localhost:8000.
 - Montants en **centimes** (`2450` = 24,50 €).
 - `incomes` / `fixed` : comptés chaque mois de `from` à `until` (inclus, `null` = sans fin).
 - `day` (facultatif, 1 à 31 ou `null`) : jour où la rentrée arrive ou la dépense est prélevée ; sert à la liste « À venir ce mois-ci ».
+- `plan` : dernier plan choisi (`prudent`, `equilibre` ou `effort`) ; `planMonth` : mois où il a été appliqué.
 - `overrides` : montant d’une rentrée ou dépense fixe pour un mois précis.
 - `type` d’opération : `expense` (dépense du quotidien), `income` (rentrée ponctuelle), `saving` (mise de côté), `withdrawal` (retrait d’épargne).
 - Les fichiers de la version 1 s’importent aussi.

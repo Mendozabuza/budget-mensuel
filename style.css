@@ -493,6 +493,24 @@ dialog h2 { font-size: 20px; font-weight: 600; }
 }
 .toast.show { opacity: 1; transform: translate(-50%, 0); }
 
+/* ---------- Répartir mon mois ---------- */
+
+.alloc-head { color: var(--muted); font-size: 15px; }
+.alloc-free { font-size: 34px; font-weight: 300; letter-spacing: -0.02em; margin: 2px 0 4px; }
+.alloc-free span { font-size: 16px; color: var(--muted); letter-spacing: 0; }
+.plans { margin-top: 16px; }
+.plan-text { min-height: 2.9em; }
+.alloc-rows { margin-top: 12px; }
+.alloc-row { display: flex; align-items: center; justify-content: space-between; gap: 12px; min-height: 58px; border-bottom: 1px solid var(--line); }
+.alloc-row .money { width: 120px; flex: none; padding: 8px 10px; border-radius: 8px; background: var(--soft); }
+.alloc-row .money:focus-within { outline: 1.5px solid var(--text); }
+.alloc-name { display: flex; flex-direction: column; min-width: 0; line-height: 1.25; }
+.alloc-name small { font-size: 13px; color: var(--muted); }
+.alloc-row.cushion { border-bottom: 0; font-weight: 600; }
+.alloc-row.cushion .alloc-name small { font-weight: 400; }
+.alloc-row.cushion .num { padding-right: 10px; }
+#view-plan .btn.ghost { margin-top: 10px; }
+
 /* ---------- À venir ce mois-ci ---------- */
 
 .up-sum { margin-bottom: 8px; }

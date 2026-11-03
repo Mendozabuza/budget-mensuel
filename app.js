@@ -25,7 +25,7 @@
     cat: ['Courses', 'Carburant', 'Restaurants', 'Loisirs', 'Santé', 'Vêtements', 'Enfants', 'Animaux', 'Cadeaux', 'Divers'],
   };
   const DEFAULT_CATS = ['Courses', 'Loisirs', 'Divers'];
-  const VIEWS = ['month', 'add', 'savings', 'history', 'settings'];
+  const VIEWS = ['month', 'add', 'savings', 'history', 'settings', 'plan'];
 
   const $ = (sel, root = document) => root.querySelector(sel);
   const $$ = (sel, root = document) => Array.from(root.querySelectorAll(sel));
@@ -220,6 +220,8 @@
       categories,
       overrides,
       transactions,
+      plan: Object.prototype.hasOwnProperty.call(PLANS, d.plan) ? d.plan : null,
+      planMonth: isMonth(d.planMonth) ? d.planMonth : null,
     };
   }
 
@@ -355,7 +357,7 @@
         ${o.toggle ? `<input type="checkbox" class="e-on" ${item.on ? 'checked' : ''} aria-label="Utiliser ${esc(item.name)}">` : ''}
         ${o.dayLabel ? `<div class="e-main">${nameInput}
           <label class="e-day">${o.dayLabel} le <input class="e-day-in" inputmode="numeric" pattern="[0-9]*" maxlength="2" placeholder="…" value="${item.day ?? ''}" autocomplete="off" aria-label="Jour du mois (facultatif)"> du mois</label></div>` : nameInput}
-        <span class="money"><input class="e-amount" inputmode="decimal" placeholder="0" value="${centsToInput(amount)}" autocomplete="off" aria-label="Montant par mois"><span class="cur">${esc(currencySymbol(o.currency))}</span></span>
+        ${o.noAmount ? '' : `<span class="money"><input class="e-amount" inputmode="decimal" placeholder="0" value="${centsToInput(amount)}" autocomplete="off" aria-label="Montant par mois"><span class="cur">${esc(currencySymbol(o.currency))}</span></span>`}
         ${o.toggle ? '' : '<button type="button" class="e-del" aria-label="Retirer cette ligne"><svg viewBox="0 0 24 24"><path d="M6 6l12 12M18 6L6 18"/></svg></button>'}
       </div>`;
   }
@@ -419,7 +421,7 @@
     for (const row of $$(`[data-editor="${key}"] .erow`, root)) {
       if (toggle && !$('.e-on', row).checked) continue;
       const name = $('.e-name', row).value.trim();
-      const raw = $('.e-amount', row).value.trim();
+      const raw = $('.e-amount', row)?.value.trim() ?? '';
       if (!name) {
         if (!raw) continue; // ligne vide : ignorée
         return { error: `Une ligne de « ${what} » n’a pas de nom.` };
@@ -440,7 +442,7 @@
     let total = 0;
     for (const row of $$(`[data-editor="${key}"] .erow`, root)) {
       if (toggle && !$('.e-on', row).checked) continue;
-      const v = parseAmount($('.e-amount', row).value.trim() || '0');
+      const v = parseAmount($('.e-amount', row)?.value.trim() || '0');
       if (!Number.isNaN(v)) total += v;
     }
     return total;
@@ -474,6 +476,182 @@
       ${msg}`;
   }
 
+  /* ---------- Répartir : plans d’épargne et budgets proposés ---------- */
+
+  // Le « risque », c’est celui de finir le mois à court : plus on épargne, plus le coussin est mince.
+  const PLANS = {
+    prudent: { label: 'Prudent', save: 0.05, cushion: 0.15, text: 'Risque faible de finir le mois à court : on épargne peu et on garde un gros coussin pour les imprévus.' },
+    equilibre: { label: 'Équilibré', save: 0.10, cushion: 0.10, text: 'Un juste milieu entre mettre de côté et garder de la marge.' },
+    effort: { label: 'Effort', save: 0.20, cushion: 0.05, text: 'Risque modéré : on épargne beaucoup et le coussin est plus mince. À éviter si vos dépenses varient beaucoup d’un mois à l’autre.' },
+  };
+
+  /** Arrondi à la dizaine inférieure (montants en centimes). */
+  const tens = (cents) => Math.max(0, Math.floor(cents / 1000) * 1000);
+
+  /** Dépense moyenne par catégorie sur les 3 derniers mois (avant `month`) qui ont des dépenses. */
+  function spendingHistory(month) {
+    const months = [];
+    let m = month;
+    for (let i = 0; i < 12 && months.length < 3; i++) {
+      m = shiftMonth(m, -1);
+      if (state.transactions.some((t) => t.type === 'expense' && t.date.startsWith(m))) months.push(m);
+    }
+    if (!months.length) return null;
+    const avg = new Map();
+    for (const t of state.transactions) {
+      if (t.type === 'expense' && months.includes(t.date.slice(0, 7))) avg.set(t.categoryId, (avg.get(t.categoryId) || 0) + t.amount / months.length);
+    }
+    return { months: months.length, avg };
+  }
+
+  /**
+   * Propose une répartition de ce qui reste après les dépenses fixes.
+   * Épargne d’abord, puis budgets du quotidien (selon les habitudes si on en a), le reste en coussin.
+   * Tout est arrondi à la dizaine ; les unités et centimes restent dans le coussin.
+   */
+  function proposePlan(key, { income, fixed, cats, hist }) {
+    const p = PLANS[key];
+    const free = income - fixed;
+    if (free <= 0) return { save: 0, budgets: new Map(cats.map((c) => [c.id, 0])) };
+    const spendable = free * (1 - p.cushion);
+    const save = Math.min(tens(income * p.save), tens(spendable / 2)); // jamais plus de la moitié de ce qui est libre
+    const rest = spendable - save;
+    const share = (weight) => {
+      const total = sum(cats, weight) || 1;
+      return new Map(cats.map((c) => [c.id, tens(rest * weight(c) / total)]));
+    };
+    if (!(hist && cats.some((c) => hist.avg.get(c.id) > 0))) {
+      // Pas encore d’habitudes : les courses pèsent plus que le reste.
+      return { save, budgets: share((c) => (/course|aliment|supermarch/i.test(c.name) ? 3 : 1)) };
+    }
+    // Selon les habitudes : moyenne + 10 %, arrondie à la dizaine supérieure.
+    const want = new Map(cats.map((c) => [c.id, Math.ceil(Math.max((hist.avg.get(c.id) || 0) * 1.1, rest * 0.05) / 1000) * 1000]));
+    const totalWant = sum([...want.values()], (x) => x);
+    if (totalWant > rest) return { save, budgets: share((c) => want.get(c.id)) };
+    // Les habitudes laissent de la marge : elle va dans l’épargne.
+    return { save: save + tens(rest - totalWant), budgets: want, boosted: true };
+  }
+
+  function setupAllocCtx() {
+    const d = ui.draft;
+    return {
+      income: sum(d.incomes, (i) => i.amount),
+      fixed: sum(d.fixed, (i) => i.amount),
+      cats: d.categories.filter((c) => c.on),
+      hist: null,
+    };
+  }
+
+  function monthAllocCtx(month) {
+    const s = summary(month);
+    return { income: s.recurringIncome, fixed: s.fixedTotal, cats: state.categories, hist: spendingHistory(month) };
+  }
+
+  /** Écran de répartition : choix du plan, montants modifiables, coussin calculé. */
+  function allocHTML(ctx, values, planKey) {
+    const free = ctx.income - ctx.fixed;
+    const field = (attrs, cents, label) => `<span class="money"><input ${attrs} inputmode="decimal" placeholder="0" value="${centsToInput(cents)}" autocomplete="off" aria-label="${esc(label)}"><span class="cur">${esc(currencySymbol())}</span></span>`;
+    const avgNote = (c) => {
+      const a = ctx.hist && ctx.hist.avg.get(c.id);
+      return a ? `<small>en moyenne ${roundMoney(a)} par mois</small>` : '';
+    };
+    return `
+      <div class="alloc">
+        <p class="alloc-head">Rentrées ${money(ctx.income)} − dépenses fixes ${money(ctx.fixed)}</p>
+        <p class="alloc-free num${free < 0 ? ' neg' : ''}">${money(free)} <span>à répartir</span></p>
+        ${free <= 0 ? '<p class="msg warn">Vos dépenses fixes atteignent ou dépassent vos rentrées : il n’y a rien à répartir. Revoyez-les dans Réglages si possible.</p>' : ''}
+        <div class="segmented plans" role="group" aria-label="Plan d’épargne">
+          ${Object.entries(PLANS).map(([k, p]) => `<button type="button" data-plan="${k}" class="${k === planKey ? 'active' : ''}">${p.label}</button>`).join('')}
+        </div>
+        <p class="note plan-text">${esc(PLANS[planKey].text)}</p>
+        ${ctx.hist ? `<p class="note">Les budgets proposés suivent vos dépenses ${ctx.hist.months > 1 ? `des ${ctx.hist.months} derniers mois` : 'du mois dernier'}, avec un peu de marge. S’il reste de la place, elle va dans l’épargne.</p>` : ''}
+        <div class="alloc-rows">
+          <label class="alloc-row"><span class="alloc-name">Épargne<small>à mettre de côté en début de mois</small></span>${field('data-alloc="save"', values.save, 'Épargne')}</label>
+          ${ctx.cats.map((c) => `
+            <label class="alloc-row"><span class="alloc-name"><span><span class="dot" style="background:${esc(c.color)}"></span> ${esc(c.name)}</span>${avgNote(c)}</span>${field(`data-alloc="cat" data-id="${esc(c.id)}"`, values.budgets.get(c.id) || 0, c.name)}</label>`).join('')}
+          <div class="alloc-row cushion"><span class="alloc-name">Coussin imprévus<small>ce qui reste, centimes compris</small></span><span class="num" data-cushion></span></div>
+        </div>
+        <p class="msg warn" data-alloc-warn hidden></p>
+      </div>`;
+  }
+
+  /** Branche l’écran de répartition ; renvoie { read } pour lire les montants choisis. */
+  function bindAlloc(root, ctx) {
+    let plan = $('.plans .active', root).dataset.plan;
+    const inputs = () => $$('[data-alloc]', root);
+    const values = () => {
+      let save = 0, bad = false;
+      const budgets = new Map();
+      for (const el of inputs()) {
+        const v = readMoneyInput(el);
+        if (Number.isNaN(v)) { bad = true; continue; }
+        if (el.dataset.alloc === 'save') save = v; else budgets.set(el.dataset.id, v);
+      }
+      return { save, budgets, bad };
+    };
+    const refresh = () => {
+      const v = values();
+      const cushion = ctx.income - ctx.fixed - v.save - sum([...v.budgets.values()], (x) => x);
+      const cell = $('[data-cushion]', root);
+      cell.textContent = money(cushion);
+      cell.classList.toggle('neg', cushion < 0);
+      const warn = $('[data-alloc-warn]', root);
+      warn.hidden = cushion >= 0 || ctx.income - ctx.fixed <= 0;
+      warn.innerHTML = `Vous répartissez <b>${money(-cushion)}</b> de plus que ce qui est libre. Baissez un montant.`;
+    };
+    $('.plans', root).addEventListener('click', (e) => {
+      const b = e.target.closest('[data-plan]');
+      if (!b) return;
+      plan = b.dataset.plan;
+      $$('.plans button', root).forEach((x) => x.classList.toggle('active', x === b));
+      $('.plan-text', root).textContent = PLANS[plan].text;
+      const p = proposePlan(plan, ctx);
+      for (const el of inputs()) el.value = centsToInput(el.dataset.alloc === 'save' ? p.save : p.budgets.get(el.dataset.id) || 0);
+      refresh();
+    });
+    $('.alloc-rows', root).addEventListener('input', refresh);
+    refresh();
+    return {
+      read() {
+        const v = values();
+        return { plan, save: v.save, budgets: v.budgets, error: v.bad ? 'Un montant est invalide (exemple : 120).' : '' };
+      },
+    };
+  }
+
+  function renderPlan() {
+    const cm = currentMonth();
+    const ctx = monthAllocCtx(cm);
+    const key = state.plan || 'equilibre';
+    // Nouveau mois : nouvelle proposition. Sinon, on repart des montants déjà choisis.
+    const values = state.planMonth === cm
+      ? { save: state.savingsTarget, budgets: new Map(state.categories.map((c) => [c.id, c.budget])) }
+      : proposePlan(key, ctx);
+    const view = $('#view-plan');
+    view.innerHTML = `
+      <section class="block">
+        <h2 class="sec">${esc(monthLabel(cm))}</h2>
+        ${allocHTML(ctx, values, key)}
+        <p class="note">Les montants proposés sont arrondis à la dizaine. Ils s’appliquent dès ce mois-ci et restent modifiables.</p>
+        <p class="error" id="plan-error" role="alert"></p>
+        <button type="button" class="btn primary" id="plan-apply">Appliquer ce plan</button>
+        <button type="button" class="btn ghost" id="plan-cancel">Annuler</button>
+      </section>`;
+    const alloc = bindAlloc(view, ctx);
+    $('#plan-apply', view).addEventListener('click', () => {
+      const r = alloc.read();
+      if (r.error) { $('#plan-error', view).textContent = r.error; return; }
+      state.plan = r.plan;
+      state.planMonth = cm;
+      state.savingsTarget = r.save;
+      for (const c of state.categories) if (r.budgets.has(c.id)) c.budget = r.budgets.get(c.id);
+      if (!save()) return;
+      toast(`Plan ${PLANS[r.plan].label.toLowerCase()} appliqué`);
+      show('month');
+    });
+    $('#plan-cancel', view).addEventListener('click', () => show('month'));
+  }
+
   /* ---------- Premier lancement : parcours guidé ---------- */
 
   function newDraft() {
@@ -484,6 +662,8 @@
       categories: SUGGEST.cat.map((name, i) => ({ id: uid(), name, budget: 0, color: PALETTE[i % PALETTE.length], on: DEFAULT_CATS.includes(name) })),
       savingsTarget: 0,
       savingsStart: 0,
+      plan: 'equilibre',
+      alloc: null,
     };
   }
 
@@ -549,19 +729,16 @@
         <p class="live" id="live"></p>`;
     } else if (s === 3) {
       title = 'Votre budget du quotidien';
-      intro = 'Ce que vous dépensez différemment chaque mois. Cochez ce qui vous concerne et fixez un montant à ne pas dépasser.';
-      body = `${editorHTML('cat', d.categories, { ...o, toggle: true })}
+      intro = 'Ce que vous dépensez différemment chaque mois. Cochez ce qui vous concerne : les montants vous seront proposés à l’étape suivante.';
+      body = `${editorHTML('cat', d.categories, { ...o, toggle: true, noAmount: true })}
         <p class="live" id="live"></p>`;
     } else {
-      title = 'Votre épargne';
-      intro = 'Mettre de côté un peu chaque mois, même une petite somme, aide à faire face aux imprévus.';
+      title = 'Votre plan';
+      intro = 'Voici comment répartir ce qui reste après les dépenses fixes. Choisissez un plan, puis ajustez si besoin.';
       body = `
-        <label class="field"><span>Combien mettre de côté chaque mois ?</span>
-          <span class="money"><input id="d-target" inputmode="decimal" placeholder="0" value="${centsToInput(d.savingsTarget)}" autocomplete="off"><span class="cur">${esc(currencySymbol())}</span></span></label>
+        ${allocHTML(setupAllocCtx(), d.alloc || proposePlan(d.plan || 'equilibre', setupAllocCtx()), d.plan || 'equilibre')}
         <label class="field"><span>Épargne déjà disponible (facultatif)</span>
-          <span class="money"><input id="d-start" inputmode="decimal" placeholder="0" value="${centsToInput(d.savingsStart)}" autocomplete="off"><span class="cur">${esc(currencySymbol())}</span></span></label>
-        <h2 class="sec">Votre plan chaque mois</h2>
-        <div id="live"></div>`;
+          <span class="money"><input id="d-start" inputmode="decimal" placeholder="0" value="${centsToInput(d.savingsStart)}" autocomplete="off"><span class="cur">${esc(currencySymbol())}</span></span></label>`;
       next = 'Terminer';
     }
 
@@ -587,9 +764,9 @@
     const live = () => updateSetupLive(root);
     if (s === 1) bindEditor(root, 'income', { ...o, ...DAY.income, suggestions: SUGGEST.income, placeholder: 'Nom de la rentrée' }, live);
     if (s === 2) bindEditor(root, 'fixed', { ...o, ...DAY.fixed, suggestions: SUGGEST.fixed, placeholder: 'Nom de la dépense' }, live);
-    if (s === 3) bindEditor(root, 'cat', { ...o, toggle: true, withColor: true, placeholder: 'Nom de la catégorie' }, live);
-    if (s === 4) root.addEventListener('input', live);
-    if (s > 0) live();
+    if (s === 3) bindEditor(root, 'cat', { ...o, toggle: true, noAmount: true, withColor: true, placeholder: 'Nom de la catégorie' }, live);
+    if (s === 4) ui.alloc = bindAlloc(root, setupAllocCtx());
+    if (s > 0 && s < 4) live();
 
     $('#setup-next').addEventListener('click', () => {
       const err = readStep();
@@ -621,15 +798,8 @@
     } else if (ui.step === 2) {
       el.innerHTML = `Total : <b>${money(fix)}</b> par mois.<br>Après les dépenses fixes, il vous reste <b class="${inc - fix < 0 ? 'neg' : ''}">${money(inc - fix)}</b>.`;
     } else if (ui.step === 3) {
-      const varp = sumEditor(root, 'cat', true);
-      const left = inc - fix - varp;
-      el.innerHTML = `Budget du quotidien : <b>${money(varp)}</b> par mois.<br>${left >= 0
-        ? `Il reste <b>${money(left)}</b> pour l’épargne et les imprévus.`
-        : `Attention : <b class="neg">${money(-left)}</b> de plus que ce qui reste après les dépenses fixes.`}`;
-    } else if (ui.step === 4) {
-      const target = parseAmount($('#d-target', root).value.trim() || '0');
-      const varp = sum(d.categories.filter((c) => c.on), (c) => c.budget);
-      el.innerHTML = planHTML({ inc, fix, varp, save: Number.isNaN(target) ? 0 : target });
+      const n = $$('[data-editor="cat"] .e-on', root).filter((c) => c.checked).length;
+      el.innerHTML = `${plural(n, 'catégorie')} ${n > 1 ? 'choisies' : 'choisie'}. Il y a <b>${money(inc - fix)}</b> à répartir entre elles, l’épargne et les imprévus.`;
     }
   }
 
@@ -640,28 +810,33 @@
     if (ui.step === 0) {
       d.currency = $('#d-currency', root).value;
     } else if (ui.step === 1 || ui.step === 2) {
+      d.alloc = null; // les rentrées ou les fixes changent : nouvelle proposition à l’étape du plan
       const key = ui.step === 1 ? 'income' : 'fixed';
       const r = readEditor(root, key, { what: ui.step === 1 ? 'Rentrées' : 'Dépenses fixes' });
       if (r.error) return r.error;
       d[ui.step === 1 ? 'incomes' : 'fixed'] = r.items.map(({ id, name, amount, day }) => ({ id, name, amount, day }));
     } else if (ui.step === 3) {
+      d.alloc = null;
       const r = readEditor(root, 'cat', { toggle: true, min: 1, what: 'Budget du quotidien' });
       if (r.error) return r.error;
       d.categories = $$('[data-editor="cat"] .erow', root)
         .map((row, i) => ({
           id: row.dataset.id,
           name: $('.e-name', row).value.trim().slice(0, 40),
-          budget: parseAmount($('.e-amount', row).value.trim() || '0') || 0,
+          budget: 0, // proposé à l’étape suivante
           color: row.dataset.color || PALETTE[i % PALETTE.length],
           on: $('.e-on', row).checked,
         }))
         .filter((c) => c.name);
     } else {
-      const target = readMoneyInput($('#d-target', root));
+      const r = ui.alloc.read();
+      d.plan = r.plan;
+      d.alloc = r; // garde la saisie si on revient en arrière
+      if (r.error) return r.error;
       const start = readMoneyInput($('#d-start', root));
-      if (Number.isNaN(target)) return 'Montant d’épargne mensuelle invalide (exemple : 50).';
       if (Number.isNaN(start)) return 'Montant d’épargne disponible invalide.';
-      d.savingsTarget = target;
+      d.savingsTarget = r.save;
+      for (const c of d.categories) if (r.budgets.has(c.id)) c.budget = r.budgets.get(c.id);
       d.savingsStart = start;
     }
     return '';
@@ -680,6 +855,8 @@
       categories: d.categories.filter((c) => c.on).map(({ id, name, budget, color }) => ({ id, name, budget, color })),
       overrides: {},
       transactions: [],
+      plan: d.plan || 'equilibre',
+      planMonth: cm,
     };
     if (!save()) return;
     ui.draft = null;
@@ -690,7 +867,7 @@
 
   /* ---------- Navigation ---------- */
 
-  const TITLES = { add: 'Nouvelle opération', savings: 'Épargne', settings: 'Réglages' };
+  const TITLES = { add: 'Nouvelle opération', savings: 'Épargne', settings: 'Réglages', plan: 'Répartir mon mois' };
 
   function show(view) {
     ui.view = view;
@@ -714,7 +891,7 @@
     const hasNav = ui.view === 'month' || ui.view === 'history';
     $('.topbar').classList.toggle('no-nav', !hasNav);
     $('#title').textContent = hasNav ? monthLabel(ui.month) : (ui.editingId ? 'Modifier' : TITLES[ui.view]);
-    ({ month: renderMonth, add: renderAdd, savings: renderSavings, history: renderHistory, settings: renderSettings })[ui.view]();
+    ({ month: renderMonth, add: renderAdd, savings: renderSavings, history: renderHistory, settings: renderSettings, plan: renderPlan })[ui.view]();
   }
 
   /* ---------- Graphiques (SVG/HTML dessinés ici, sans bibliothèque : fonctionnent hors ligne) ---------- */
@@ -1018,6 +1195,12 @@
 
       ${stackHTML(s)}
 
+      ${isCur && state.planMonth !== cm && state.categories.length ? `
+        <div class="tip plan-tip">
+          <p>Votre plan de ${esc(monthName(cm))} est prêt : épargne et budgets, arrondis à la dizaine.</p>
+          <button type="button" class="link inline" data-go="plan">Voir</button>
+        </div>` : ''}
+
       ${tipList.map((t) => `
         <div class="tip ${t.kind}">
           <p>${esc(t.text)}</p>
@@ -1058,6 +1241,7 @@
         <h2 class="sec">Budget du quotidien <span class="muted">${money(s.varSpent)} / ${money(s.varPlanned)}</span></h2>
         ${shareHTML(s)}
         ${catLines.join('')}
+        ${isCur ? '<button type="button" class="link" data-go="plan">Répartir mon mois</button>' : ''}
       </section>
 
       <section class="block">
