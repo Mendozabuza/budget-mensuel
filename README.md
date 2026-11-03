@@ -5,8 +5,9 @@ Petite web app de budget mensuel guidée, pensée pour iPhone. HTML/CSS/JS sans 
 - **Parcours de départ en 4 étapes** : ce qui rentre chaque mois (salaire, APL, prime d’activité…), ce qui sort chaque mois (loyer, factures, abonnements…), le budget du quotidien (courses, loisirs…) et l’épargne. À la fin, un récapitulatif dit si le plan tient.
 - **Rentrées et dépenses fixes comptées automatiquement** chaque mois. Leur montant peut être ajusté pour un mois seulement (ex. : APL qui varie) ou pour tous les mois suivants.
 - **Mois** : ce qu’il vous reste, un repère « environ X par jour », le détail rentrées / fixes / quotidien / épargne, l’avancement de chaque budget et des conseils (budget dépassé, dépenses trop rapides, objectif d’épargne…).
+- **Graphiques** (dessinés par l’app, sans bibliothèque, fonctionnent hors ligne) : où va l’argent du mois, rythme des dépenses face au budget, répartition du quotidien par catégorie, rentrées et dépenses des 6 derniers mois, évolution de l’épargne.
 - **Ajouter** : dépense du quotidien, rentrée ponctuelle (prime, remboursement…) ou épargne (mettre de côté / retirer).
-- **Épargne** : total épargné, objectif du mois, historique mois par mois avec l’argent non dépensé.
+- **Épargne** : total épargné et sa courbe d’évolution, objectif du mois, historique mois par mois avec l’argent non dépensé.
 - **Historique** : opérations notées du mois ; toucher une ligne pour la modifier.
 - **Réglages** : tout modifier, **Exporter / Importer** en JSON, tout effacer.
 - Fonctionne **hors ligne** une fois chargée (service worker) et s’installe sur l’écran d’accueil.

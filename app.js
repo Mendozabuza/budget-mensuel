@@ -663,6 +663,172 @@
     ({ month: renderMonth, add: renderAdd, savings: renderSavings, history: renderHistory, settings: renderSettings })[ui.view]();
   }
 
+  /* ---------- Graphiques (SVG/HTML dessinés ici, sans bibliothèque : fonctionnent hors ligne) ---------- */
+
+  function roundMoney(cents) {
+    return new Intl.NumberFormat('fr-FR', { style: 'currency', currency: activeCurrency(), maximumFractionDigits: 0 }).format(cents / 100);
+  }
+
+  function monthShort(month) {
+    const [y, m] = month.split('-').map(Number);
+    return new Date(y, m - 1, 1).toLocaleDateString('fr-FR', { month: 'short' }).replace('.', '');
+  }
+
+  const fx = (n) => n.toFixed(1);
+
+  /** 1. Où va mon argent : une barre empilée fixes / quotidien / épargne / reste. */
+  function stackHTML(s) {
+    const save = Math.max(s.savedNet, 0);
+    const out = s.fixedTotal + s.varSpent + save;
+    const base = Math.max(s.incomeTotal, out);
+    if (!base) return '';
+    const parts = [
+      ['fixed', 'Fixes', s.fixedTotal],
+      ['var', 'Quotidien', s.varSpent],
+      ['save', 'Épargne', save],
+      ['left', 'Reste', Math.max(s.incomeTotal - out, 0)],
+    ].filter((p) => p[2] > 0);
+    const pct = (v) => Math.round((v / base) * 100);
+    const over = s.incomeTotal > 0 && out > s.incomeTotal;
+    return `
+      <div class="chart">
+        <div class="stack-wrap">
+          <div class="stack" role="img" aria-label="${esc(parts.map((p) => `${p[1]} ${pct(p[2])} %`).join(', '))}">
+            ${parts.map((p) => `<span class="seg-${p[0]}" style="width:${(p[2] / base * 100).toFixed(2)}%"></span>`).join('')}
+          </div>
+          ${over ? `<i class="stack-limit" style="left:${fx(s.incomeTotal / base * 100)}%"></i>` : ''}
+        </div>
+        <div class="legend">${parts.map((p) => `<span><i class="seg-${p[0]}"></i>${p[1]} ${pct(p[2])} %</span>`).join('')}</div>
+        ${over ? '<p class="note">Le trait rouge marque vos rentrées : ce qui dépasse à droite est dépensé en trop.</p>' : ''}
+      </div>`;
+  }
+
+  /** 2. Suis-je dans les clous : dépenses du quotidien cumulées jour après jour, face au rythme prévu. */
+  function paceHTML(month) {
+    const planned = sum(state.categories, (c) => c.budget);
+    const cm = currentMonth();
+    if (!planned || month > cm) return '';
+    const dim = daysInMonth(month);
+    const lastDay = month === cm ? new Date().getDate() : dim;
+    const perDay = new Array(dim + 1).fill(0);
+    for (const t of state.transactions) {
+      if (t.type === 'expense' && t.date.startsWith(month)) perDay[Number(t.date.slice(8, 10))] += t.amount;
+    }
+    const pts = [];
+    let acc = 0;
+    for (let d = 0; d <= lastDay; d++) { acc += perDay[d]; pts.push([d, acc]); }
+
+    const W = 300, H = 140, L = 4, R = 4, T = 16, B = 20;
+    const max = Math.max(planned, acc) * 1.08;
+    const x = (d) => L + (d / dim) * (W - L - R);
+    const y = (v) => T + (1 - v / max) * (H - T - B);
+    const over = acc > planned;
+    const expected = Math.round(planned * lastDay / dim);
+    const labelRight = lastDay < dim * 0.65;
+
+    return `
+      <svg class="chart-svg" viewBox="0 0 ${W} ${H}" role="img" aria-label="Dépenses du quotidien cumulées : ${esc(money(acc))} au jour ${lastDay}, pour un budget de ${esc(money(planned))}">
+        <line class="ch-axis" x1="${L}" y1="${fx(y(0))}" x2="${W - R}" y2="${fx(y(0))}"/>
+        <line class="ch-budget" x1="${L}" y1="${fx(y(planned))}" x2="${W - R}" y2="${fx(y(planned))}"/>
+        <text x="${W - R}" y="${fx(y(planned) - 5)}" text-anchor="end">budget ${esc(roundMoney(planned))}</text>
+        <line class="ch-ideal" x1="${fx(x(0))}" y1="${fx(y(0))}" x2="${fx(x(dim))}" y2="${fx(y(planned))}"/>
+        <polyline class="ch-line${over ? ' over' : ''}" points="${pts.map(([d, v]) => `${fx(x(d))},${fx(y(v))}`).join(' ')}"/>
+        <circle class="ch-dot${over ? ' over' : ''}" cx="${fx(x(lastDay))}" cy="${fx(y(acc))}" r="4"/>
+        <text class="ch-value" x="${fx(x(lastDay) + (labelRight ? 8 : 0))}" y="${fx(y(acc) + (labelRight ? 4 : -10))}" text-anchor="${labelRight ? 'start' : 'end'}">${esc(roundMoney(acc))}</text>
+        <text x="${L}" y="${H - 4}">1</text>
+        <text x="${W - R}" y="${H - 4}" text-anchor="end">${dim}</text>
+      </svg>
+      <div class="legend"><span><i class="k-ink${over ? ' over' : ''}"></i>Dépensé</span><span><i class="k-dash"></i>Rythme prévu</span></div>
+      <p class="note">${month === cm
+        ? `Au ${lastDay} ${monthName(month)}, vous avez dépensé ${money(acc)} au quotidien ; le rythme prévu était d’environ ${money(expected)}.`
+        : `Total du mois : ${money(acc)} pour un budget de ${money(planned)}.`}</p>`;
+  }
+
+  /** 5. Où part le quotidien : catégories triées de la plus grosse à la plus petite. */
+  function shareHTML(s) {
+    const rows = [...s.spentBy]
+      .map(([id, amount]) => ({ name: (categoryById(id) || {}).name || 'Sans catégorie', amount }))
+      .filter((r) => r.amount > 0)
+      .sort((a, b) => b.amount - a.amount);
+    if (rows.length < 2) return '';
+    const max = rows[0].amount;
+    return `
+      <div class="share" role="img" aria-label="Répartition du quotidien : ${esc(rows.map((r) => `${r.name} ${Math.round(r.amount / s.varSpent * 100)} %`).join(', '))}">
+        ${rows.map((r, i) => `
+          <div class="share-row">
+            <span class="share-name">${esc(r.name)}</span>
+            <span class="share-bar"><i class="${i ? '' : 'top'}" style="width:${fx(r.amount / max * 100)}%"></i></span>
+            <span class="num share-pct">${Math.round(r.amount / s.varSpent * 100)} %</span>
+          </div>`).join('')}
+      </div>`;
+  }
+
+  /** 3. Les 6 derniers mois : rentrées face aux dépenses (fixes + quotidien). */
+  function monthsHTML() {
+    const cm = currentMonth();
+    const first = firstMonth();
+    const months = [];
+    for (let m = cm, n = 0; n < 6 && m >= first; m = shiftMonth(m, -1), n++) months.unshift(m);
+    if (months.length < 2) return '<p class="note">Ce graphique se remplira au fil des mois : revenez le mois prochain.</p>';
+
+    const data = months.map((m) => {
+      const s = summary(m);
+      return { m, inc: s.incomeTotal, out: s.fixedTotal + s.varSpent };
+    });
+    const max = Math.max(1, ...data.flatMap((d) => [d.inc, d.out])) * 1.1;
+    const W = 300, H = 140, T = 6, B = 20;
+    const slot = W / months.length;
+    const bw = Math.min(18, slot / 3);
+    const y = (v) => T + (1 - v / max) * (H - T - B);
+    const positive = data.filter((d) => d.inc >= d.out).length;
+
+    const bars = data.map((d, i) => {
+      const cx = slot * i + slot / 2;
+      return `
+        <rect class="ch-inc" x="${fx(cx - bw - 1)}" y="${fx(y(d.inc))}" width="${fx(bw)}" height="${fx(y(0) - y(d.inc))}" rx="3"/>
+        <rect class="ch-out${d.out > d.inc ? ' over' : ''}" x="${fx(cx + 1)}" y="${fx(y(d.out))}" width="${fx(bw)}" height="${fx(y(0) - y(d.out))}" rx="3"/>
+        <text x="${fx(cx)}" y="${H - 4}" text-anchor="middle"${d.m === cm ? ' class="ch-strong"' : ''}>${esc(monthShort(d.m))}</text>`;
+    }).join('');
+
+    return `
+      <svg class="chart-svg" viewBox="0 0 ${W} ${H}" role="img" aria-label="Rentrées et dépenses des ${months.length} derniers mois">
+        <line class="ch-axis" x1="0" y1="${fx(y(0))}" x2="${W}" y2="${fx(y(0))}"/>
+        ${bars}
+      </svg>
+      <div class="legend"><span><i class="k-ink"></i>Rentrées</span><span><i class="k-mute"></i>Dépenses</span><span><i class="k-neg"></i>Dépenses &gt; rentrées</span></div>
+      <p class="note">${positive} mois sur ${months.length} où vos rentrées ont couvert vos dépenses.</p>`;
+  }
+
+  /** 4. Épargne qui grandit : total épargné à la fin de chaque mois. */
+  function savingsChartHTML() {
+    const cm = currentMonth();
+    const first = firstMonth();
+    const months = [];
+    for (let m = cm, n = 0; n < 12 && m >= first; m = shiftMonth(m, -1), n++) months.unshift(m);
+    if (months.length < 2) return '<p class="note">La courbe apparaîtra dès le mois prochain.</p>';
+
+    const delta = (t) => (t.type === 'saving' ? t.amount : t.type === 'withdrawal' ? -t.amount : 0);
+    const values = months.map((m) => state.savingsStart + sum(state.transactions.filter((t) => t.date.slice(0, 7) <= m), delta));
+    const W = 300, H = 130, L = 4, R = 4, T = 18, B = 20;
+    const min = Math.min(0, ...values);
+    const max = Math.max(1, ...values) * 1.1;
+    const x = (i) => L + (i / (months.length - 1)) * (W - L - R);
+    const y = (v) => T + (1 - (v - min) / (max - min)) * (H - T - B);
+    const line = values.map((v, i) => `${fx(x(i))},${fx(y(v))}`).join(' ');
+    const last = values.length - 1;
+
+    return `
+      <svg class="chart-svg" viewBox="0 0 ${W} ${H}" role="img" aria-label="Épargne totale de ${esc(money(values[0]))} à ${esc(money(values[last]))} sur ${months.length} mois">
+        <line class="ch-axis" x1="${L}" y1="${fx(y(min))}" x2="${W - R}" y2="${fx(y(min))}"/>
+        <polygon class="ch-save-area" points="${fx(x(0))},${fx(y(min))} ${line} ${fx(x(last))},${fx(y(min))}"/>
+        <polyline class="ch-save-line" points="${line}"/>
+        <circle class="ch-save-dot" cx="${fx(x(last))}" cy="${fx(y(values[last]))}" r="4"/>
+        <text class="ch-value" x="${fx(x(last))}" y="${fx(y(values[last]) - 9)}" text-anchor="end">${esc(roundMoney(values[last]))}</text>
+        <text x="${L}" y="${H - 4}">${esc(monthShort(months[0]))}</text>
+        <text x="${W - R}" y="${H - 4}" text-anchor="end">${esc(monthShort(months[last]))}</text>
+      </svg>`;
+  }
+
   /* ---------- Vue du mois ---------- */
 
   function bar(value, max, cls = '') {
@@ -749,6 +915,7 @@
     }
 
     const tipList = tips(s, m);
+    const pace = paceHTML(m);
 
     $('#view-month').innerHTML = `
       <section class="hero">
@@ -756,6 +923,8 @@
         <p class="big num${s.remaining < 0 ? ' neg' : ''}">${money(Math.abs(s.remaining))}</p>
         <p class="sub">${sub}</p>
       </section>
+
+      ${stackHTML(s)}
 
       ${tipList.map((t) => `
         <div class="tip ${t.kind}">
@@ -785,9 +954,21 @@
         <div class="line total"><span>Il reste</span><span class="num${s.remaining < 0 ? ' neg' : ''}">${money(s.remaining)}</span></div>
       </section>
 
+      ${pace ? `
+        <section class="block">
+          <h2 class="sec">Suis-je dans les clous ?</h2>
+          ${pace}
+        </section>` : ''}
+
       <section class="block">
         <h2 class="sec">Budget du quotidien <span class="muted">${money(s.varSpent)} / ${money(s.varPlanned)}</span></h2>
+        ${shareHTML(s)}
         ${catLines.join('')}
+      </section>
+
+      <section class="block">
+        <h2 class="sec">Vos derniers mois</h2>
+        ${monthsHTML()}
       </section>
 
       ${s.tx.length ? '' : `<p class="empty">Aucune dépense notée ce mois-ci.<br><button type="button" class="link inline" data-go="add">Noter une dépense</button></p>`}
@@ -1052,6 +1233,11 @@
         <p class="eyebrow">Épargne totale</p>
         <p class="big num${total < 0 ? ' neg' : ''}">${money(total)}</p>
         <p class="sub">${state.savingsStart ? `dont ${money(state.savingsStart)} de départ` : 'mis de côté depuis le début'}</p>
+      </section>
+
+      <section class="block">
+        <h2 class="sec">Évolution</h2>
+        ${savingsChartHTML()}
       </section>
 
       <section class="block">
