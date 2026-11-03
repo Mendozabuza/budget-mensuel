@@ -16,6 +16,7 @@
   const STORAGE_KEY = 'budget-mensuel';
   const SCHEMA_VERSION = 2;
   const MAX_IMPORT_BYTES = 5 * 1024 * 1024;
+  const SEEN_MAX = 3000; // opérations importées puis écartées, mémorisées pour ne pas les reproposer
 
   const PALETTE = ['#2f855a', '#2b6cb0', '#c05621', '#6b46c1', '#b83280', '#2c7a7b', '#b7791f', '#718096', '#4c51bf', '#c53030'];
   const CURRENCIES = ['EUR', 'CHF', 'CAD', 'USD', 'GBP', 'MAD', 'XOF'];
@@ -25,7 +26,7 @@
     cat: ['Courses', 'Carburant', 'Restaurants', 'Loisirs', 'Santé', 'Vêtements', 'Enfants', 'Animaux', 'Cadeaux', 'Divers'],
   };
   const DEFAULT_CATS = ['Courses', 'Loisirs', 'Divers'];
-  const VIEWS = ['month', 'add', 'savings', 'history', 'settings', 'plan'];
+  const VIEWS = ['month', 'add', 'savings', 'history', 'settings', 'plan', 'import'];
 
   const $ = (sel, root = document) => root.querySelector(sel);
   const $$ = (sel, root = document) => Array.from(root.querySelectorAll(sel));
@@ -197,8 +198,16 @@
         amount: t.amount,
         categoryId: t.type === 'expense' && typeof t.categoryId === 'string' ? t.categoryId : null,
         note: typeof t.note === 'string' ? t.note.slice(0, 120) : '',
+        ...(typeof t.ref === 'string' && t.ref.length <= 80 ? { ref: t.ref } : {}),
       };
     });
+
+    const rules = {};
+    if (d.rules && typeof d.rules === 'object' && !Array.isArray(d.rules)) {
+      for (const [k, v] of Object.entries(d.rules).slice(0, 1000)) {
+        if (k !== '__proto__' && k.length <= 60 && typeof v === 'string') rules[k] = v;
+      }
+    }
 
     const overrides = {};
     if (d.overrides && typeof d.overrides === 'object') {
@@ -220,6 +229,8 @@
       categories,
       overrides,
       transactions,
+      rules,
+      seenRefs: Array.isArray(d.seenRefs) ? d.seenRefs.filter((r) => typeof r === 'string' && r.length <= 80).slice(-SEEN_MAX) : [],
       plan: Object.prototype.hasOwnProperty.call(PLANS, d.plan) ? d.plan : null,
       planMonth: isMonth(d.planMonth) ? d.planMonth : null,
     };
@@ -857,6 +868,8 @@
       transactions: [],
       plan: d.plan || 'equilibre',
       planMonth: cm,
+      rules: {},
+      seenRefs: [],
     };
     if (!save()) return;
     ui.draft = null;
@@ -867,7 +880,7 @@
 
   /* ---------- Navigation ---------- */
 
-  const TITLES = { add: 'Nouvelle opération', savings: 'Épargne', settings: 'Réglages', plan: 'Répartir mon mois' };
+  const TITLES = { add: 'Nouvelle opération', savings: 'Épargne', settings: 'Réglages', plan: 'Répartir mon mois', import: 'Importer' };
 
   function show(view) {
     ui.view = view;
@@ -891,7 +904,7 @@
     const hasNav = ui.view === 'month' || ui.view === 'history';
     $('.topbar').classList.toggle('no-nav', !hasNav);
     $('#title').textContent = hasNav ? monthLabel(ui.month) : (ui.editingId ? 'Modifier' : TITLES[ui.view]);
-    ({ month: renderMonth, add: renderAdd, savings: renderSavings, history: renderHistory, settings: renderSettings, plan: renderPlan })[ui.view]();
+    ({ month: renderMonth, add: renderAdd, savings: renderSavings, history: renderHistory, settings: renderSettings, plan: renderPlan, import: renderImport })[ui.view]();
   }
 
   /* ---------- Graphiques (SVG/HTML dessinés ici, sans bibliothèque : fonctionnent hors ligne) ---------- */
@@ -1398,6 +1411,7 @@
       </div>`;
 
     $('#view-add').innerHTML = `
+      ${editing ? '' : '<button type="button" class="link import-link" data-bank-import>Importer un relevé bancaire ou vos paiements Apple Pay</button>'}
       <form id="tx-form" novalidate autocomplete="off">
         ${seg('kind', [['expense', 'Dépense'], ['income', 'Rentrée'], ['saving', 'Épargne']], kind)}
         <div id="dir-wrap" ${kind === 'saving' ? '' : 'hidden'}>
@@ -1433,6 +1447,7 @@
           </div>` : ''}
       </form>`;
 
+    bindBankImport($('#view-add'));
     const form = $('#tx-form');
     form.dataset.kind = kind;
     form.dataset.dir = dir;
@@ -1481,6 +1496,7 @@
         categoryId: type === 'expense' ? checked.value : null,
         note: $('#tx-note').value.trim().slice(0, 120),
       };
+      if (editing && editing.ref) entry.ref = editing.ref; // reste reconnue lors d’un prochain import
       if (editing) state.transactions[state.transactions.indexOf(editing)] = entry;
       else state.transactions.push(entry);
       if (!save()) return;
@@ -1665,6 +1681,13 @@
       <button type="button" class="btn primary" id="set-save">Enregistrer</button>
 
       <section class="block" style="margin-top:40px">
+        <h2 class="sec">Importer des opérations</h2>
+        <p class="note">Plutôt que tout noter à la main : importez le relevé de votre banque ou le journal de vos paiements Apple Pay. L’app trie, propose une catégorie et écarte les doublons avant que vous validiez.</p>
+        <button type="button" class="btn" data-bank-import>Choisir un fichier</button>
+        ${IMPORT_GUIDES}
+      </section>
+
+      <section class="block">
         <h2 class="sec">Sauvegarde</h2>
         <p class="note">Vos données sont uniquement sur ce téléphone. Exportez régulièrement un fichier (par exemple dans Fichiers ou iCloud Drive) pour ne rien perdre et pour changer d’appareil.</p>
         <div class="row-btns">
@@ -1738,6 +1761,7 @@
 
     $('#btn-export', root).addEventListener('click', exportData);
     $('#btn-import', root).addEventListener('click', () => $('#import-file').click());
+    bindBankImport(root);
     $('#btn-reset', root).addEventListener('click', () => {
       if (!confirm('Effacer toutes les rentrées, dépenses et l’épargne enregistrées sur ce téléphone ?')) return;
       if (!confirm('Dernière confirmation : c’est définitif. Avez-vous exporté une sauvegarde ?')) return;
@@ -1794,6 +1818,413 @@
     toast('Import terminé');
   }
 
+  /* ---------- Import d’un relevé bancaire ou du journal Apple Pay ---------- */
+  // Tout se passe sur le téléphone : le fichier est lu ici et n’est envoyé nulle part.
+
+  const strip = (s) => String(s).normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase();
+
+  /** Petite empreinte d’une chaîne, pour reconnaître une opération déjà importée. */
+  function hash(s) {
+    let h = 5381;
+    for (let i = 0; i < s.length; i++) h = ((h << 5) + h + s.charCodeAt(i)) | 0;
+    return (h >>> 0).toString(36);
+  }
+
+  /** Lit le fichier en UTF-8, ou en Windows-1252 (encodage fréquent des exports bancaires). */
+  async function readText(file) {
+    const buf = await file.arrayBuffer();
+    const utf8 = new TextDecoder('utf-8').decode(buf);
+    if (!utf8.includes('\uFFFD')) return utf8.replace(/^\uFEFF/, '');
+    try { return new TextDecoder('windows-1252').decode(buf); } catch { return utf8; }
+  }
+
+  /** "-23,40" / "23,40 €" / "1 234.56" / "€23.40" → centimes signés ; NaN si illisible. */
+  function looseAmount(str) {
+    let s = String(str ?? '').replace(/[\s\u00a0\u202f€]|EUR/gi, '');
+    const neg = /^[-−(]|-$/.test(s);
+    s = s.replace(/[^0-9.,]/g, '');
+    if (!/\d/.test(s)) return NaN;
+    const last = Math.max(s.lastIndexOf(','), s.lastIndexOf('.'));
+    s = last >= 0 && s.length - last - 1 <= 2
+      ? `${s.slice(0, last).replace(/[.,]/g, '')}.${s.slice(last + 1)}`
+      : s.replace(/[.,]/g, '');
+    const v = Math.round(parseFloat(s) * 100);
+    return Number.isNaN(v) ? NaN : neg ? -v : v;
+  }
+
+  const FR_MONTHS = ['janv', 'fevr', 'mars', 'avr', 'mai', 'juin', 'juil', 'aout', 'sept', 'oct', 'nov', 'dec'];
+
+  /** "2026-11-03…", "20261103", "03/11/2026", "3/11/26", "3 nov. 2026" → "2026-11-03" ; null sinon. */
+  function looseDate(str) {
+    const s = strip(String(str ?? '').trim());
+    let y, m, d, r;
+    if ((r = s.match(/^(\d{4})-?(\d{2})-?(\d{2})/))) [, y, m, d] = r;
+    else if ((r = s.match(/^(\d{1,2})[/.-](\d{1,2})[/.-](\d{2,4})/))) [, d, m, y] = r;
+    else if ((r = s.match(/(\d{1,2})(?:er)?\s+([a-z]+)\.?\s+(\d{4})/))) {
+      const i = FR_MONTHS.findIndex((p) => r[2].startsWith(p.slice(0, 3)) && (p !== 'juin' || r[2].startsWith('juin')) && (p !== 'juil' || r[2].startsWith('juil')));
+      if (i < 0) return null;
+      [d, m, y] = [r[1], i + 1, r[3]];
+    } else return null;
+    if (String(y).length === 2) y = `20${y}`;
+    const iso = `${y}-${pad(Number(m))}-${pad(Number(d))}`;
+    return isValidISODate(iso) ? iso : null;
+  }
+
+  /** Découpe un CSV (guillemets et retours à la ligne dans les cellules compris). */
+  function parseCSV(text, sep) {
+    const rows = [];
+    let row = [], cell = '', quoted = false;
+    for (let i = 0; i < text.length; i++) {
+      const ch = text[i];
+      if (quoted) {
+        if (ch !== '"') cell += ch;
+        else if (text[i + 1] === '"') { cell += '"'; i++; }
+        else quoted = false;
+      } else if (ch === '"' && !cell.trim()) quoted = true;
+      else if (ch === sep) { row.push(cell); cell = ''; }
+      else if (ch === '\n' || ch === '\r') {
+        if (ch === '\r' && text[i + 1] === '\n') i++;
+        row.push(cell); rows.push(row); row = []; cell = '';
+      } else cell += ch;
+    }
+    if (cell || row.length) { row.push(cell); rows.push(row); }
+    return rows.map((r) => r.map((c) => c.replace(/\s+/g, ' ').trim()));
+  }
+
+  /** Numérote les opérations identiques d’un même fichier (deux cafés le même jour) pour les distinguer. */
+  function refMaker(prefix) {
+    const seen = new Map();
+    return (key) => {
+      const n = (seen.get(key) || 0) + 1;
+      seen.set(key, n);
+      return `${prefix}:${hash(`${key}#${n}`)}`;
+    };
+  }
+
+  function parseOFX(text) {
+    const ref = refMaker('ofx');
+    const tag = (b, name) => {
+      const r = b.match(new RegExp(`<${name}>([^<\\r\\n]*)`, 'i'));
+      return r ? r[1].replace(/&amp;/g, '&').replace(/&lt;/g, '<').replace(/&gt;/g, '>').trim() : '';
+    };
+    return text.split(/<STMTTRN>/i).slice(1).map((b) => {
+      const name = tag(b, 'NAME');
+      const memo = tag(b, 'MEMO');
+      // NAME est souvent tronqué, MEMO le complète ; s’ils parlent du même commerçant, on garde le plus long.
+      const words = (t) => strip(t).split(/[^a-z0-9]+/).filter((w) => w.length > 2 && !/^\d+$/.test(w));
+      const overlap = memo && name && words(memo).some((w) => words(name).includes(w));
+      const label = !memo ? name : !name ? memo : overlap ? (memo.length > name.length ? memo : name) : `${name} ${memo}`;
+      const date = looseDate(tag(b, 'DTPOSTED'));
+      const amount = looseAmount(tag(b, 'TRNAMT'));
+      const fitid = tag(b, 'FITID');
+      return { date, amount, label, ref: fitid ? `ofx:${hash(fitid)}` : ref(`${date}|${amount}|${label}`) };
+    });
+  }
+
+  /** CSV de banque (Crédit Agricole, Caisse d’Épargne…) : on repère les colonnes par leur titre. */
+  function parseBankCSV(rows) {
+    const h = rows.findIndex((r) => r.some((c) => strip(c).includes('date')) &&
+      r.some((c) => /montant|debit|credit/.test(strip(c))));
+    if (h < 0) return null;
+    const head = rows[h].map(strip);
+    const find = (...tests) => {
+      for (const t of tests) { const i = head.findIndex(t); if (i >= 0) return i; }
+      return -1;
+    };
+    const di = find((c) => c.includes('date') && c.includes('operation'), (c) => c.includes('date'));
+    const li = find((c) => c.includes('libelle') && c.includes('simplifi'), (c) => c.includes('libelle'),
+      (c) => /description|intitule|label|nature|detail/.test(c));
+    const mi = find((c) => c.includes('montant'));
+    const de = find((c) => c.includes('debit'));
+    const cr = find((c) => c.includes('credit'));
+    if (di < 0 || (mi < 0 && de < 0 && cr < 0)) return null;
+    const ref = refMaker('csv');
+    return rows.slice(h + 1).map((r) => {
+      const date = looseDate(r[di]);
+      let amount;
+      if (mi >= 0) amount = looseAmount(r[mi]);
+      else {
+        const credit = cr >= 0 ? looseAmount(r[cr]) : NaN;
+        const debit = de >= 0 ? looseAmount(r[de]) : NaN;
+        amount = credit ? Math.abs(credit) : debit ? -Math.abs(debit) : NaN;
+      }
+      const label = li >= 0 ? r[li] || '' : '';
+      return { date, amount, label, ref: ref(`${date}|${amount}|${label}`) };
+    });
+  }
+
+  /** Journal Apple Pay écrit par le raccourci : « date;montant;commerçant » par ligne. */
+  function parseApplePay(rows) {
+    const ref = refMaker('ap');
+    const items = rows.filter((r) => r.length >= 3 && looseDate(r[0]) && !Number.isNaN(looseAmount(r[1])))
+      .map((r) => {
+        const merchant = r.slice(2).join(' ').trim();
+        const date = looseDate(r[0]);
+        const amount = -Math.abs(looseAmount(r[1]));
+        return { date, amount, label: merchant || 'Paiement Apple Pay', ref: ref(`${date}|${amount}|${merchant}`) };
+      });
+    return items.length ? items : null;
+  }
+
+  function parseStatement(text) {
+    if (/<STMTTRN>/i.test(text)) return { source: 'ofx', items: parseOFX(text) };
+    const sample = text.split(/\r?\n/).slice(0, 30).join('\n');
+    const count = (c) => sample.split(c).length;
+    const sep = [';', '\t', ','].sort((a, b) => count(b) - count(a))[0];
+    const rows = parseCSV(text, sep);
+    const bank = parseBankCSV(rows);
+    if (bank) return { source: 'csv', items: bank };
+    const ap = parseApplePay(rows);
+    if (ap) return { source: 'applepay', items: ap };
+    return null;
+  }
+
+  /** Libellé bancaire → nom lisible : « PAIEMENT PAR CARTE X1234 CARREFOUR 12/11 » → « Carrefour ». */
+  function cleanLabel(raw) {
+    let s = String(raw).replace(/\s+/g, ' ').trim();
+    s = s.replace(/^((paiement|achat)( par)? (carte|cb)|carte|cb|prlv( sepa)?|prelevement( sepa)?|prelevmnt|vir(ement)?( sepa)?( recu| emis| inst)?|retrait( dab)?)\b[\s:.-]*/i, '');
+    s = s.replace(/\b\d{2}[/.]\d{2}([/.]\d{2,4})?\b/g, '').replace(/\bX+\d+\b|\bCB\*?\d+\b|\b\d{6,}\b/gi, '');
+    s = s.replace(/\s+/g, ' ').replace(/^[\s:.-]+|[\s:.-]+$/g, '');
+    if (s && s === s.toUpperCase()) s = s.toLowerCase().replace(/(^|[\s'’-])\p{L}/gu, (c) => c.toUpperCase());
+    return (s || String(raw).trim() || 'Opération').slice(0, 60);
+  }
+
+  /** Clés d’un commerçant (« sncf connect », puis « sncf »), pour retenir la catégorie choisie la fois précédente. */
+  function merchantKeys(label) {
+    const words = strip(label).replace(/[^a-z0-9 ]/g, ' ').split(' ').filter((w) => w.length > 2 && !/^\d+$/.test(w));
+    return [...new Set([words.slice(0, 2).join(' '), words[0]])].filter(Boolean);
+  }
+
+  // Commerçants courants → type de catégorie (cherchée par son nom parmi les vôtres).
+  const CAT_HINTS = [
+    [/\b(course|aliment|supermarch|nourrit)/, /carrefour|leclerc|auchan|lidl|aldi|intermarch|monoprix|franprix|casino|super u|hyper u|systeme u|netto|picard|biocoop|grand frais|naturalia|spar|cora|g20|epicerie|primeur|boulang|patisserie/],
+    [/\b(transport|voiture|essence|carburant|deplacement)/, /sncf|ratp|navigo|tgv|ouigo|uber(?! ?eats)|bolt|blablacar|totalenergies|total |esso|shell|\bbp\b|avia|peage|autoroute|vinci|sanef|aprr|parking|velib|transdev|keolis/],
+    [/\b(restau|resto|sortie)/, /restaurant|mcdo|mc donald|burger|kfc|subway|starbucks|deliveroo|uber ?eats|just ?eat|brasserie|pizza|sushi|kebab|\bcafe\b/],
+    [/\b(loisir|culture|sport|divertis)/, /cinema|ugc|pathe|gaumont|fnac|cultura|spotify|netflix|deezer|disney|steam|playstation|nintendo|decathlon|intersport|basic ?fit|fitness|musee|concert|ticketmaster/],
+    [/\b(sante|pharma|medic|soin)/, /pharmacie|docteur|medecin|dentiste|opticien|laboratoire|doctolib|hopital/],
+    [/\b(vetement|habill|shopping)/, /zara|h ?& ?m|kiabi|uniqlo|primark|celio|jules|vinted|zalando|shein|asos/],
+    [/\b(maison|bricol|equipement)/, /ikea|leroy merlin|castorama|conforama|darty|boulanger|maisons du monde/],
+    [/\banima/, /maxi zoo|animalis|veterinaire|zooplus/],
+  ];
+
+  function guessCategory(rawLabel, label) {
+    for (const key of merchantKeys(label)) {
+      const learned = state.rules[key];
+      if (learned && categoryById(learned)) return learned;
+    }
+    const text = strip(rawLabel);
+    for (const [catRe, shopRe] of CAT_HINTS) {
+      if (!shopRe.test(text)) continue;
+      const cat = state.categories.find((c) => catRe.test(strip(c.name)));
+      if (cat) return cat.id;
+    }
+    const other = state.categories.find((c) => /divers|autre/.test(strip(c.name)));
+    return (other || state.categories[0] || {}).id || null;
+  }
+
+  const SAVING_RE = /livret|\bldds?\b|\blep\b|\bpel\b|\bcel\b|epargne|assurance vie/;
+
+  /** Classe chaque ligne : à ajouter, déjà notée (Apple Pay ou à la main) ou déjà comptée (fixes, rentrées). */
+  function analyzeImport(parsed) {
+    const known = new Set([...state.seenRefs, ...state.transactions.map((t) => t.ref).filter(Boolean)]);
+    const used = new Set();
+    const days = (a, b) => Math.abs(new Date(a) - new Date(b)) / 86400000;
+    const rows = [];
+    let already = 0, unreadable = 0;
+    for (const it of parsed.items) {
+      if (!it.date || !Number.isFinite(it.amount) || !it.amount) { unreadable++; continue; }
+      if (known.has(it.ref)) { already++; continue; }
+      const label = cleanLabel(it.label);
+      const amount = Math.abs(it.amount);
+      const month = it.date.slice(0, 7);
+      let type = it.amount < 0 ? 'expense' : 'income';
+      if (parsed.source !== 'applepay' && SAVING_RE.test(strip(it.label))) type = it.amount < 0 ? 'saving' : 'withdrawal';
+      let status = 'new', reason = '';
+
+      const twin = state.transactions.find((t) => !used.has(t.id) && t.type === type && t.amount === amount && days(t.date, it.date) <= 3);
+      if (twin) {
+        used.add(twin.id);
+        status = 'dup';
+        reason = `déjà notée le ${Number(twin.date.slice(8))}${twin.note ? ` (${twin.note})` : ''}`;
+      } else if (type === 'expense' || type === 'income') {
+        const words = strip(label);
+        // Un paiement par carte n’est presque jamais un prélèvement fixe : il faut alors que le nom corresponde.
+        const card = /\b(carte|cb)\b|apple ?pay/.test(strip(it.label)) || parsed.source === 'applepay';
+        const hit = recurringFor(type === 'expense' ? state.fixed : state.incomes, month).find(({ item, amount: planned }) => {
+          if (!planned) return false;
+          const close = Math.abs(planned - amount) <= Math.max(100, planned * (type === 'income' ? 0.25 : 0.1));
+          const nameHit = strip(item.name).split(/[^a-z0-9]+/).some((w) => w.length > 2 && words.includes(w));
+          const dayHit = item.day && Math.abs(dayIn(item, month) - Number(it.date.slice(8))) <= 4;
+          return close && (nameHit || (!card && (dayHit || planned === amount)));
+        });
+        if (hit) {
+          status = 'fixed';
+          reason = `déjà comptée dans ${type === 'expense' ? 'les dépenses fixes' : 'les rentrées'} (${hit.item.name})`;
+        }
+      }
+      rows.push({
+        date: it.date, amount, type, label, ref: it.ref, status, reason,
+        categoryId: type === 'expense' ? guessCategory(it.label, label) : null,
+        checked: status === 'new',
+      });
+    }
+    rows.sort((a, b) => b.date.localeCompare(a.date));
+    return { source: parsed.source, rows, already, unreadable };
+  }
+
+  const IMPORT_GUIDES = `
+    <details class="flow guide">
+      <summary><span>Paiements Apple Pay, automatiquement</span></summary>
+      <div class="guide-body">
+        <p>Un raccourci de l’iPhone note chaque paiement Apple Pay dans un petit fichier. Vous l’importez ici quand vous voulez : ce qui a déjà été importé est ignoré, inutile de vider le fichier. (L’iPhone ne permet pas à un raccourci d’écrire directement dans une app installée depuis Safari, d’où ce fichier.)</p>
+        <ol>
+          <li>Ouvrez l’app <b>Raccourcis</b>, onglet <b>Automatisation</b>, puis <b>+</b> (Nouvelle automatisation).</li>
+          <li>Choisissez <b>Transaction</b> (Wallet), sélectionnez vos cartes, et cochez <b>Exécuter immédiatement</b>.</li>
+          <li>Ajoutez l’action <b>Ajouter au fichier texte</b> (cherchez « fichier texte »). Comme texte, mettez trois variables séparées par des points-virgules : <b>Date actuelle</b> (touchez-la et choisissez le format <b>ISO 8601</b>) <b>;</b> <b>Montant</b> <b>;</b> <b>Commerçant</b>. Montant et Commerçant se trouvent dans l’entrée du raccourci.</li>
+          <li>Comme fichier, indiquez par exemple <b>Budget/applepay.txt</b> et activez <b>Créer un saut de ligne</b> s’il est proposé.</li>
+          <li>Ensuite, de temps en temps : <b>Ajouter › Importer</b>, puis choisissez <b>applepay.txt</b> dans Fichiers.</li>
+        </ol>
+        <p class="note">Les intitulés exacts peuvent varier selon la version d’iOS (17 ou plus requis).</p>
+      </div>
+    </details>
+    <details class="flow guide">
+      <summary><span>Relevé du Crédit Agricole</span></summary>
+      <div class="guide-body">
+        <ol>
+          <li>Connectez-vous sur le <b>site internet</b> du Crédit Agricole (dans Safari ou sur ordinateur) : l’export n’est en général pas proposé dans l’app de la banque.</li>
+          <li>Ouvrez votre compte et cherchez <b>Télécharger</b> ou <b>Exporter</b> près de la liste des opérations.</li>
+          <li>Choisissez le format <b>OFX</b> (parfois appelé « Money ») si possible, sinon <b>CSV</b>, et la période voulue.</li>
+          <li>Ici : <b>Choisir un fichier</b>, puis le fichier téléchargé.</li>
+        </ol>
+        <p class="note">L’emplacement du bouton varie selon les caisses régionales.</p>
+      </div>
+    </details>
+    <details class="flow guide">
+      <summary><span>Relevé de la Caisse d’Épargne</span></summary>
+      <div class="guide-body">
+        <ol>
+          <li>Connectez-vous sur le <b>site internet</b> de la Caisse d’Épargne (dans Safari ou sur ordinateur).</li>
+          <li>Ouvrez le compte, puis cherchez <b>Télécharger les opérations</b> (ou <b>Exporter</b>).</li>
+          <li>Choisissez le format <b>OFX</b> si possible, sinon <b>CSV</b>, et la période voulue.</li>
+          <li>Ici : <b>Choisir un fichier</b>, puis le fichier téléchargé.</li>
+        </ol>
+      </div>
+    </details>
+    <p class="note">Le fichier est lu sur ce téléphone uniquement : rien n’est envoyé sur Internet.</p>`;
+
+  async function bankImportFile(file) {
+    if (file.size > MAX_IMPORT_BYTES) { alert('Import impossible : fichier trop volumineux.'); return; }
+    let parsed;
+    try { parsed = parseStatement(await readText(file)); } catch { parsed = null; }
+    if (!parsed) {
+      alert('Ce fichier n’a pas pu être lu. Utilisez un export OFX ou CSV de votre banque, ou le journal Apple Pay (voir Réglages › Importer des opérations).');
+      return;
+    }
+    const result = analyzeImport(parsed);
+    if (!result.rows.length) {
+      alert(result.already ? 'Rien de nouveau : toutes les opérations de ce fichier ont déjà été importées.' : 'Aucune opération trouvée dans ce fichier.');
+      return;
+    }
+    ui.importData = result;
+    show('import');
+  }
+
+  function bindBankImport(root) {
+    $$('[data-bank-import]', root).forEach((b) => b.addEventListener('click', () => $('#bank-file').click()));
+  }
+
+  const TYPE_LABELS = { income: 'Rentrée', saving: 'Mis de côté', withdrawal: 'Retrait d’épargne' };
+
+  function renderImport() {
+    const view = $('#view-import');
+    const data = ui.importData;
+    if (!data) { show('add'); return; }
+    const catOptions = (sel) => state.categories.map((c) => `<option value="${esc(c.id)}" ${c.id === sel ? 'selected' : ''}>${esc(c.name)}</option>`).join('');
+    const row = (r, i) => `
+      <div class="imp-row${r.checked ? '' : ' off'}" data-i="${i}">
+        <input type="checkbox" class="imp-on" ${r.checked ? 'checked' : ''} aria-label="Ajouter ${esc(r.label)}">
+        <span class="imp-main">
+          <span class="imp-top"><span class="imp-label">${esc(r.label)}</span>
+            <span class="num${r.type === 'income' || r.type === 'withdrawal' ? ' pos' : ''}">${r.type === 'income' || r.type === 'withdrawal' ? '+' : '−'}${money(r.amount)}</span></span>
+          <span class="imp-sub">${Number(r.date.slice(8))} ${esc(monthShort(r.date.slice(0, 7)))}${r.type === 'expense'
+            ? ` · <select class="imp-cat" aria-label="Catégorie">${catOptions(r.categoryId)}</select>`
+            : ` · ${TYPE_LABELS[r.type]}`}</span>
+          ${r.reason ? `<span class="imp-why">${esc(r.reason)}</span>` : ''}
+        </span>
+      </div>`;
+    const fresh = data.rows.map((r, i) => [r, i]).filter(([r]) => r.status === 'new');
+    const skipped = data.rows.map((r, i) => [r, i]).filter(([r]) => r.status !== 'new');
+    const s = (n) => (n > 1 ? 's' : '');
+    const source = { ofx: 'Relevé bancaire', csv: 'Relevé bancaire', applepay: 'Paiements Apple Pay' }[data.source];
+
+    view.innerHTML = `
+      <section class="block">
+        <h2 class="sec">${source}</h2>
+        <p class="imp-sum">${data.rows.length} opération${s(data.rows.length)} nouvelle${s(data.rows.length)}.
+          ${skipped.length ? `${skipped.length} ${skipped.length > 1 ? 'semblent' : 'semble'} déjà notée${skipped.length > 1 ? 's' : ''} ou comptée${skipped.length > 1 ? 's' : ''} : elles sont décochées.` : 'Aucun doublon repéré.'}
+          ${data.already ? `${plural(data.already, 'autre')} déjà importée${data.already > 1 ? 's' : ''} auparavant, ignorée${data.already > 1 ? 's' : ''}.` : ''}</p>
+        <p class="note">Vérifiez les catégories, décochez ce que vous ne voulez pas ajouter, puis validez.</p>
+      </section>
+      ${fresh.length ? `
+        <section class="block">
+          <h2 class="sec">À ajouter</h2>
+          <div class="imp-list">${fresh.map(([r, i]) => row(r, i)).join('')}</div>
+        </section>` : ''}
+      ${skipped.length ? `
+        <section class="block">
+          <details class="flow"${fresh.length ? '' : ' open'}>
+            <summary><span>Doublons probables (${skipped.length})</span></summary>
+            <div class="imp-list">${skipped.map(([r, i]) => row(r, i)).join('')}</div>
+          </details>
+        </section>` : ''}
+      <button type="button" class="btn primary" id="imp-go"></button>
+      <button type="button" class="btn ghost" id="imp-cancel">Annuler</button>`;
+
+    const count = () => {
+      const n = data.rows.filter((r) => r.checked).length;
+      const go = $('#imp-go', view);
+      go.textContent = n ? `Ajouter ${plural(n, 'opération')}` : 'Ne rien ajouter';
+    };
+    view.addEventListener('change', (e) => {
+      const el = e.target.closest('.imp-row');
+      if (!el) return;
+      const r = data.rows[Number(el.dataset.i)];
+      if (e.target.classList.contains('imp-on')) { r.checked = e.target.checked; el.classList.toggle('off', !r.checked); }
+      if (e.target.classList.contains('imp-cat')) r.categoryId = e.target.value;
+      count();
+    });
+    // Toucher le nom de l’opération coche / décoche la ligne (la liste de catégories reste à part).
+    view.addEventListener('click', (e) => {
+      const top = e.target.closest('.imp-top');
+      if (!top) return;
+      const box = $('.imp-on', top.closest('.imp-row'));
+      box.checked = !box.checked;
+      box.dispatchEvent(new Event('change', { bubbles: true }));
+    });
+    count();
+
+    $('#imp-go', view).addEventListener('click', () => {
+      let added = 0;
+      for (const r of data.rows) {
+        if (r.checked) {
+          state.transactions.push({ id: uid(), type: r.type, date: r.date, amount: r.amount, categoryId: r.type === 'expense' ? r.categoryId : null, note: r.label.slice(0, 120), ref: r.ref });
+          if (r.type === 'expense' && r.categoryId) {
+            for (const key of merchantKeys(r.label)) state.rules[key] = r.categoryId;
+          }
+          added++;
+        } else {
+          state.seenRefs.push(r.ref); // écartée : ne sera pas reproposée au prochain import
+        }
+      }
+      state.seenRefs = state.seenRefs.slice(-SEEN_MAX);
+      if (!save()) return;
+      ui.importData = null;
+      toast(added ? `${added} opération${s(added)} ajoutée${s(added)}` : 'Rien n’a été ajouté');
+      show('history');
+    });
+    $('#imp-cancel', view).addEventListener('click', () => { ui.importData = null; show('add'); });
+  }
+
   /* ---------- Démarrage ---------- */
 
   function requestPersistence() {
@@ -1836,6 +2267,11 @@
     $('#next-month').addEventListener('click', () => goMonth(1));
     bindDialog();
 
+    $('#bank-file').addEventListener('change', (e) => {
+      const file = e.target.files && e.target.files[0];
+      e.target.value = '';
+      if (file) bankImportFile(file);
+    });
     $('#import-file').addEventListener('change', (e) => {
       const file = e.target.files && e.target.files[0];
       e.target.value = '';

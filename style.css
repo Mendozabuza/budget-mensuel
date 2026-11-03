@@ -511,6 +511,25 @@ dialog h2 { font-size: 20px; font-weight: 600; }
 .alloc-row.cushion .num { padding-right: 10px; }
 #view-plan .btn.ghost { margin-top: 10px; }
 
+/* ---------- Import de relevés ---------- */
+
+.import-link { display: block; margin: 16px 0 0; text-align: left; font-size: 15px; }
+.imp-sum { font-size: 16px; }
+.imp-row { display: flex; align-items: flex-start; gap: 12px; padding: 12px 0; border-bottom: 1px solid var(--line); }
+.imp-row:last-child { border-bottom: 0; }
+.imp-row input[type="checkbox"] { width: 22px; height: 22px; margin: 2px 0 0; accent-color: var(--text); flex: none; }
+.imp-row.off .imp-main { opacity: .45; }
+.imp-main { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 2px; }
+.imp-top { display: flex; justify-content: space-between; gap: 10px; }
+.imp-label { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.imp-sub { font-size: 13px; color: var(--muted); }
+.imp-cat { font: inherit; font-size: 16px; color: var(--text); background: var(--soft); border: 0; border-radius: 6px; padding: 2px 6px; max-width: 60%; }
+.imp-why { font-size: 13px; color: var(--muted); font-style: italic; }
+#view-import .btn.ghost { margin-top: 10px; }
+.guide-body { padding: 4px 0 14px; font-size: 15px; }
+.guide-body ol { padding-left: 20px; margin: 8px 0; }
+.guide-body li { margin: 6px 0; }
+
 /* ---------- À venir ce mois-ci ---------- */
 
 .up-sum { margin-bottom: 8px; }
