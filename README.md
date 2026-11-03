@@ -11,7 +11,7 @@ Petite web app de budget mensuel guidée, pensée pour iPhone. HTML/CSS/JS sans 
 - **Ajouter** : dépense du quotidien, rentrée ponctuelle (prime, remboursement…) ou épargne (mettre de côté / retirer).
 - **Épargne** : total épargné et sa courbe d’évolution, objectif du mois, historique mois par mois avec l’argent non dépensé.
 - **Historique** : opérations notées du mois ; toucher une ligne pour la modifier.
-- **Réglages** : tout modifier, **Exporter / Importer** en JSON, tout effacer.
+- **Réglages** : tout modifier, **Exporter / Importer** en JSON, tout effacer. L’app indique la date de la dernière sauvegarde et rappelle d’en faire une (une semaine après la première opération, puis tous les 30 jours).
 - Fonctionne **hors ligne** une fois chargée (service worker) et s’installe sur l’écran d’accueil.
 
 ## Confidentialité
@@ -79,6 +79,7 @@ Puis ouvrir http://localhost:8000.
 - `incomes` / `fixed` : comptés chaque mois de `from` à `until` (inclus, `null` = sans fin).
 - `day` (facultatif, 1 à 31 ou `null`) : jour où la rentrée arrive ou la dépense est prélevée ; sert à la liste « À venir ce mois-ci ».
 - `ref` (facultatif, sur une opération) : empreinte de l’opération importée ; `seenRefs` : opérations importées puis écartées ; `rules` : catégorie retenue par commerçant.
+- `lastBackup` : jour de la dernière sauvegarde exportée (ou `null`).
 - `plan` : dernier plan choisi (`prudent`, `equilibre` ou `effort`) ; `planMonth` : mois où il a été appliqué.
 - `overrides` : montant d’une rentrée ou dépense fixe pour un mois précis.
 - `type` d’opération : `expense` (dépense du quotidien), `income` (rentrée ponctuelle), `saving` (mise de côté), `withdrawal` (retrait d’épargne).

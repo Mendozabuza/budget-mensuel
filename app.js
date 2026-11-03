@@ -233,6 +233,7 @@
       seenRefs: Array.isArray(d.seenRefs) ? d.seenRefs.filter((r) => typeof r === 'string' && r.length <= 80).slice(-SEEN_MAX) : [],
       plan: Object.prototype.hasOwnProperty.call(PLANS, d.plan) ? d.plan : null,
       planMonth: isMonth(d.planMonth) ? d.planMonth : null,
+      lastBackup: isValidISODate(d.lastBackup) ? d.lastBackup : null,
     };
   }
 
@@ -870,6 +871,7 @@
       planMonth: cm,
       rules: {},
       seenRefs: [],
+      lastBackup: null,
     };
     if (!save()) return;
     ui.draft = null;
@@ -1208,6 +1210,8 @@
 
       ${stackHTML(s)}
 
+      ${isCur ? backupTipHTML() : ''}
+
       ${isCur && state.planMonth !== cm && state.categories.length ? `
         <div class="tip plan-tip">
           <p>Votre plan de ${esc(monthName(cm))} est prêt : épargne et budgets, arrondis à la dizaine.</p>
@@ -1268,6 +1272,7 @@
     const view = $('#view-month');
     $$('.rec', view).forEach((b) => b.addEventListener('click', () => openRecurring(b.dataset.kind, b.dataset.id)));
     bindGo(view);
+    $$('[data-backup]', view).forEach((b) => b.addEventListener('click', exportData));
   }
 
   function bindGo(root) {
@@ -1690,6 +1695,7 @@
       <section class="block">
         <h2 class="sec">Sauvegarde</h2>
         <p class="note">Vos données sont uniquement sur ce téléphone. Exportez régulièrement un fichier (par exemple dans Fichiers ou iCloud Drive) pour ne rien perdre et pour changer d’appareil.</p>
+        <p class="note" id="backup-note">${backupNoteHTML()}</p>
         <div class="row-btns">
           <button type="button" class="btn" id="btn-export">Exporter</button>
           <button type="button" class="btn" id="btn-import">Importer</button>
@@ -1773,9 +1779,55 @@
 
   /* ---------- Export / import ---------- */
 
+  /** Jours écoulés depuis une date AAAA-MM-JJ. */
+  function daysSince(iso) {
+    const [y, m, d] = iso.split('-').map(Number);
+    const now = new Date();
+    return Math.round((new Date(now.getFullYear(), now.getMonth(), now.getDate()) - new Date(y, m - 1, d)) / 86400000);
+  }
+
+  const BACKUP_FIRST_DAYS = 7;  // première sauvegarde conseillée une semaine après la première opération
+  const BACKUP_EVERY_DAYS = 30; // puis une fois par mois
+
+  /** Carte « pensez à sauvegarder », ou '' si la sauvegarde est récente. */
+  function backupTipHTML() {
+    if (!state.transactions.length) return '';
+    let text;
+    if (state.lastBackup) {
+      const n = daysSince(state.lastBackup);
+      if (n < BACKUP_EVERY_DAYS) return '';
+      text = `Dernière sauvegarde il y a ${plural(n, 'jour')}. Une copie récente évite de tout perdre si l’iPhone efface les données.`;
+    } else {
+      const first = state.transactions.reduce((a, t) => (t.date < a ? t.date : a), todayISO());
+      if (daysSince(first) < BACKUP_FIRST_DAYS) return '';
+      text = 'Vos données ne sont que sur ce téléphone et n’ont jamais été sauvegardées.';
+    }
+    return `
+      <div class="tip warn backup-tip">
+        <p>${esc(text)}</p>
+        <button type="button" class="link inline" data-backup>Sauvegarder</button>
+      </div>`;
+  }
+
+  function backupNoteHTML() {
+    if (!state.lastBackup) return 'Aucune sauvegarde pour l’instant.';
+    const n = daysSince(state.lastBackup);
+    return `Dernière sauvegarde : ${n === 0 ? 'aujourd’hui' : n === 1 ? 'hier' : `il y a ${plural(n, 'jour')}`}.`;
+  }
+
+  function backupDone(day) {
+    state.lastBackup = day;
+    save();
+    toast('Sauvegarde enregistrée');
+    if (ui.view === 'month') renderMonth();
+    const note = $('#backup-note');
+    if (note) note.textContent = backupNoteHTML();
+  }
+
   async function exportData() {
-    const payload = { app: 'budget-mensuel', exportedAt: new Date().toISOString(), ...state };
-    const name = `budget-${todayISO()}.json`;
+    const day = todayISO();
+    const payload = { app: 'budget-mensuel', exportedAt: new Date().toISOString(), ...state, lastBackup: day };
+    const name = `budget-${day}.json`;
     const file = new File([JSON.stringify(payload, null, 2)], name, { type: 'application/json' });
 
     // Sur iPhone, la feuille de partage permet « Enregistrer dans Fichiers ».
@@ -1783,6 +1835,7 @@
     if (touch && navigator.canShare && navigator.canShare({ files: [file] })) {
       try {
         await navigator.share({ files: [file], title: name });
+        backupDone(day);
         return;
       } catch (e) {
         if (e.name === 'AbortError') return;
@@ -1796,6 +1849,7 @@
     a.click();
     a.remove();
     setTimeout(() => URL.revokeObjectURL(url), 2000);
+    backupDone(day);
   }
 
   async function importFile(file) {
