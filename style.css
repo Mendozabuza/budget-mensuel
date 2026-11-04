@@ -96,7 +96,7 @@ main {
   bottom: 0;
   z-index: 5;
   display: grid;
-  grid-template-columns: repeat(5, 1fr);
+  grid-template-columns: repeat(3, 1fr);
   padding: 4px 4px calc(4px + env(safe-area-inset-bottom));
   background: var(--bg);
   border-top: 1px solid var(--line);
@@ -130,15 +130,13 @@ main {
   justify-content: space-between;
   align-items: baseline;
   gap: 8px;
-  font-size: 13px;
-  font-weight: 600;
-  color: var(--muted);
-  text-transform: uppercase;
-  letter-spacing: .06em;
-  padding: 16px 0 8px;
-  border-bottom: 1px solid var(--text);
+  font-size: 22px;
+  font-weight: 700;
+  letter-spacing: -0.01em;
+  padding: 28px 0 4px;
 }
-.sec .muted { text-transform: none; letter-spacing: 0; font-weight: 400; font-variant-numeric: tabular-nums; }
+.sec .muted { font-size: 15px; font-weight: 400; font-variant-numeric: tabular-nums; }
+.sec + .note { margin: 0 0 8px; }
 
 .line {
   display: flex;
@@ -149,7 +147,11 @@ main {
   padding: 10px 0;
   border-bottom: 1px solid var(--line);
 }
-.line.total { border-bottom: 0; border-top: 1px solid var(--text); font-weight: 600; }
+.line.total { border-bottom: 0; border-top: 1px solid var(--text); font-weight: 700; }
+.line.neg .num { color: var(--neg); }
+.line.pos-line .num { color: var(--pos); }
+.lbl { display: flex; flex-direction: column; min-width: 0; line-height: 1.3; }
+.lbl small { font-size: 13px; color: var(--muted); }
 .line small { color: var(--muted); font-size: 13px; }
 
 button.line {
@@ -315,6 +317,10 @@ legend { font-size: 14px; color: var(--muted); margin-bottom: 10px; padding: 0; 
 .e-day { font-size: 13px; color: var(--muted); }
 .e-day-in { width: 2.4em; padding: 0; border: 0; border-bottom: 1px solid var(--line); border-radius: 0; background: none; color: var(--text); text-align: center; outline: none; }
 .e-day-in:focus { border-bottom-color: var(--text); }
+.e-cat { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; padding-bottom: 4px; }
+.e-per { max-width: 100%; padding: 6px 26px 6px 10px; border: 0; border-radius: 8px; background: var(--soft); font-size: 14px; -webkit-appearance: none; appearance: none; background-image: linear-gradient(45deg, transparent 50%, var(--muted) 50%), linear-gradient(135deg, var(--muted) 50%, transparent 50%); background-position: calc(100% - 13px) 50%, calc(100% - 8px) 50%; background-size: 5px 5px; background-repeat: no-repeat; }
+.erow .e-cat .money { width: 84px; padding: 6px 10px; }
+.erow.off .e-cat { opacity: .4; }
 .e-del { width: 36px; height: 36px; display: grid; place-items: center; flex: none; margin-right: -8px; background: none; border: 0; border-radius: 50%; color: var(--muted); }
 .e-del svg { width: 18px; height: 18px; }
 .e-del:active { background: var(--tap); }
@@ -404,7 +410,7 @@ dialog h2 { font-size: 20px; font-weight: 600; }
 .plans { margin-top: 16px; }
 .plan-text { min-height: 2.9em; }
 .alloc-rows { margin-top: 12px; }
-.alloc-sec { margin: 22px 0 2px; font-size: 13px; font-weight: 600; letter-spacing: .06em; text-transform: uppercase; color: var(--muted); }
+.alloc-sec { margin: 26px 0 2px; font-size: 17px; font-weight: 600; }
 .alloc-sec + .note { margin-top: 2px; }
 .alloc-row { display: flex; align-items: center; justify-content: space-between; gap: 12px; min-height: 58px; border-bottom: 1px solid var(--line); }
 .alloc-row .money { width: 120px; flex: none; padding: 8px 10px; border-radius: 8px; background: var(--soft); }
@@ -415,17 +421,26 @@ dialog h2 { font-size: 20px; font-weight: 600; }
 .alloc-row.cushion .alloc-name small { font-weight: 400; }
 .alloc-row.cushion .num { padding-right: 10px; }
 
-/* ---------- Combien dépenser par jour ---------- */
+/* ---------- Sur votre compte / par jour ---------- */
 
-.daily .per { font-size: 20px; color: var(--muted); letter-spacing: 0; }
-.daily .btn { margin-top: 16px; }
-.daily.empty { text-align: left; color: inherit; padding: 32px 0 24px; }
-.daily.empty .sub { margin-top: 6px; }
-.calc { margin-top: 18px; padding: 2px 14px; border-radius: 10px; background: var(--soft); }
-.calc .line { min-height: 42px; padding: 8px 0; font-size: 15px; }
-.calc .line.total { border-top-color: var(--line); }
+.account { margin-top: 20px; padding: 18px 18px 16px; border-radius: 16px; background: var(--soft); }
+.account-label { font-size: 15px; font-weight: 600; }
+.account-amount { font-size: 44px; font-weight: 300; letter-spacing: -0.03em; line-height: 1.1; margin: 4px 0 2px; }
+.account .link { display: inline-block; width: auto; margin-top: 4px; padding: 4px 0; font-size: 15px; text-align: left; }
+.top-tip { margin-top: 16px; }
+.account .btn { margin-top: 12px; }
+.account-stale { font-size: 14px; color: var(--neg); }
+.account.empty .note { margin-bottom: 4px; }
 
-.sub-sec { margin: 22px 0 0; font-size: 13px; font-weight: 600; letter-spacing: .06em; text-transform: uppercase; color: var(--muted); }
+.perday { margin-top: 4px; padding: 18px; border-radius: 16px; background: var(--ok-bg); }
+.perday.short { background: var(--warn-bg); }
+.perday-label { font-size: 15px; font-weight: 600; }
+.perday-amount { font-size: 40px; font-weight: 600; letter-spacing: -0.03em; line-height: 1.15; color: var(--pos); }
+.perday.short .perday-amount { color: var(--neg); }
+.perday-amount span { font-size: 18px; font-weight: 400; color: var(--muted); letter-spacing: 0; }
+.perday-sub { font-size: 15px; color: var(--muted); }
+
+.sub-sec { margin: 26px 0 0; font-size: 17px; font-weight: 600; }
 .save-line { border-bottom: 0; }
 .save-done { display: flex; align-items: center; gap: 10px; width: 100%; min-height: 44px; margin-bottom: 4px; padding: 0 12px; border: 0; border-radius: 10px; background: var(--soft); font-size: 15px; text-align: left; }
 .save-done .box { width: 20px; height: 20px; flex: none; border: 1.5px solid var(--muted); border-radius: 6px; }

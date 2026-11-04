@@ -23,7 +23,7 @@
   const SUGGEST = {
     income: ['Salaire', 'Allocation chômage', 'APL', 'Prime d’activité', 'Allocations familiales', 'Pension alimentaire', 'Retraite', 'Bourse', 'Autre revenu'],
     fixed: ['Loyer', 'Électricité', 'Gaz', 'Eau', 'Internet', 'Téléphone', 'Assurance habitation', 'Assurance auto', 'Mutuelle', 'Transport en commun', 'Streaming', 'Salle de sport', 'Crédit', 'Impôts', 'Frais bancaires'],
-    cat: ['Courses', 'Carburant', 'Restaurants', 'Loisirs', 'Santé', 'Vêtements', 'Enfants', 'Animaux', 'Cadeaux', 'Divers'],
+    cat: ['Courses', 'Tabac', 'Carburant', 'Restaurants', 'Loisirs', 'Santé', 'Vêtements', 'Enfants', 'Animaux', 'Cadeaux', 'Divers'],
   };
   const DEFAULT_CATS = ['Courses', 'Loisirs', 'Divers'];
   const VIEWS = ['month', 'savings', 'settings', 'edit'];
@@ -202,7 +202,8 @@
     if (!Array.isArray(d.categories)) throw new Error('le champ « categories » doit être une liste.');
     const categories = d.categories.map((c, i) => {
       if (!c || typeof c.id !== 'string') throw new Error(`catégorie n°${i + 1} invalide.`);
-      return { id: c.id, name: cleanName(c.name), color: /^#[0-9a-f]{6}$/i.test(c.color) ? c.color : PALETTE[i % PALETTE.length] };
+      const per = ['month', 'week'].includes(c.per) && isCents(c.amount) ? c.per : null;
+      return { id: c.id, name: cleanName(c.name), color: /^#[0-9a-f]{6}$/i.test(c.color) ? c.color : PALETTE[i % PALETTE.length], per, amount: per ? c.amount : null };
     });
 
     const months = {};
@@ -284,7 +285,7 @@
       currency: d.currency,
       incomes,
       fixed,
-      categories: categories.map(({ id, name, color }) => ({ id, name, color })),
+      categories: categories.map(({ id, name, color }) => ({ id, name, color, per: null, amount: null })),
       plan,
       months,
       bank: d.bank,
@@ -375,7 +376,9 @@
     const fixedToCome = sum(toCome, (x) => x.amount);
     const saveToCome = b.saveDone ? 0 : b.save;
     const left = bank.amount - fixedToCome - saveToCome;
-    return { bank, day, daysLeft, toCome, fixedToCome, saveToCome, left, perDay: left > 0 ? Math.floor(left / daysLeft) : 0 };
+    // Rentrées encore attendues : affichées pour information, jamais comptées.
+    const incomesToCome = b.incomes.filter((x) => x.amount > 0 && x.item.day && Math.min(x.item.day, daysInMonth(b.month)) > day);
+    return { bank, day, daysLeft, toCome, fixedToCome, saveToCome, incomesToCome, left, perDay: left > 0 ? Math.floor(left / daysLeft) : 0 };
   }
 
   /* ---------- Plans : épargne et budgets proposés ---------- */
@@ -398,14 +401,31 @@
   function proposePlan(key, { income, fixed, cats }) {
     const p = PLANS[key];
     const free = income - fixed;
-    if (free <= 0) return { save: 0, budgets: new Map(cats.map((c) => [c.id, 0])) };
-    const spendable = free * (1 - p.cushion);
+    const known = cats.filter((c) => c.per);
+    const auto = cats.filter((c) => !c.per);
+    const budgets = new Map(known.map((c) => [c.id, catMonthly(c)]));
+    if (free <= 0) {
+      for (const c of auto) budgets.set(c.id, 0);
+      return { save: 0, budgets };
+    }
+    // Les montants que vous connaissez (tabac, courses à 40 € par semaine…) passent en premier.
+    const spendable = free * (1 - p.cushion) - sum(known, catMonthly);
     const save = Math.min(tens(income * p.save), tens(spendable / 2)); // jamais plus de la moitié de ce qui est libre
-    const rest = spendable - save;
+    const rest = Math.max(0, spendable - save);
     const weight = (c) => (/course|aliment|supermarch/i.test(c.name) ? 3 : 1);
-    const total = sum(cats, weight) || 1;
-    return { save, budgets: new Map(cats.map((c) => [c.id, tens(rest * weight(c) / total)])) };
+    const total = sum(auto, weight) || 1;
+    for (const c of auto) budgets.set(c.id, tens(rest * weight(c) / total));
+    return { save, budgets };
   }
+
+  /** Montant par mois d’un poste dont vous connaissez le montant (par semaine : 52 semaines / 12 mois, arrondi à l’euro). */
+  function catMonthly(c) {
+    if (c.per === 'week') return Math.round(c.amount * 52 / 12 / 100) * 100;
+    return c.per === 'month' ? c.amount : 0;
+  }
+
+  /** « 40 € par semaine », « 45 € par mois ». */
+  const knownLabel = (c) => `${roundMoney(c.amount)} par ${c.per === 'week' ? 'semaine' : 'mois'}`;
 
   /** Écran de répartition : choix du plan, montants modifiables, marge calculée. */
   function allocHTML(ctx, values, planKey) {
@@ -421,11 +441,11 @@
         </div>
         <p class="note plan-text">${esc(PLANS[planKey].text)}</p>
         <div class="alloc-rows">
-          <h3 class="alloc-sec">À mettre de côté</h3>
+          <h3 class="alloc-sec">Mettre de côté</h3>
           <label class="alloc-row"><span class="alloc-name">Épargne<small>virement vers le livret</small></span>${field('data-alloc="save"', values.save, 'Épargne')}</label>
-          ${ctx.cats.length ? '<h3 class="alloc-sec">À dépenser dans le mois</h3>' : ''}
+          ${ctx.cats.length ? '<h3 class="alloc-sec">Dépenses de tous les jours</h3>' : ''}
           ${ctx.cats.map((c) => `
-            <label class="alloc-row"><span class="alloc-name"><span><span class="dot" style="background:${esc(c.color)}"></span> ${esc(c.name)}</span><small data-week></small></span>${field(`data-alloc="cat" data-id="${esc(c.id)}"`, values.budgets.get(c.id) || 0, c.name)}</label>`).join('')}
+            <label class="alloc-row"><span class="alloc-name"><span><span class="dot" style="background:${esc(c.color)}"></span> ${esc(c.name)}</span>${c.per ? `<small>vous avez indiqué ${esc(knownLabel(c))}</small>` : '<small data-week></small>'}</span>${field(`data-alloc="cat" data-id="${esc(c.id)}"`, values.budgets.get(c.id) || 0, c.name)}</label>`).join('')}
           <div class="alloc-row cushion"><span class="alloc-name">Marge pour les imprévus<small>ce qui n’est pas réparti</small></span><span class="num" data-cushion></span></div>
         </div>
         <p class="msg warn" data-alloc-warn hidden></p>
@@ -490,11 +510,21 @@
   function rowHTML(item, o) {
     const amount = item.amount ?? 0;
     const nameInput = `<input class="e-name" value="${esc(item.name)}" placeholder="${esc(o.placeholder || 'Nom')}" maxlength="40" autocomplete="off" aria-label="Nom">`;
+    const per = item.per || 'auto';
+    const catLine = o.catAmount ? `
+          <div class="e-cat">
+            <select class="e-per" aria-label="Montant de ${esc(item.name)}">
+              <option value="auto" ${per === 'auto' ? 'selected' : ''}>L’app propose</option>
+              <option value="month" ${per === 'month' ? 'selected' : ''}>Je sais, par mois</option>
+              <option value="week" ${per === 'week' ? 'selected' : ''}>Je sais, par semaine</option>
+            </select>
+            <span class="money"${per === 'auto' ? ' hidden' : ''}><input class="e-cat-amt" inputmode="decimal" placeholder="0" value="${per === 'auto' ? '' : centsToInput(item.amount)}" autocomplete="off" aria-label="Montant"><span class="cur">${esc(currencySymbol(o.currency))}</span></span>
+          </div>` : '';
     return `
       <div class="erow${o.toggle && !item.on ? ' off' : ''}" data-id="${esc(item.id)}"${item.color ? ` data-color="${esc(item.color)}"` : ''}>
         ${o.toggle ? `<input type="checkbox" class="e-on" ${item.on ? 'checked' : ''} aria-label="Utiliser ${esc(item.name)}">` : ''}
         ${o.dayLabel ? `<div class="e-main">${nameInput}
-          <label class="e-day">${o.dayLabel} le <input class="e-day-in" inputmode="numeric" pattern="[0-9]*" maxlength="2" placeholder="…" value="${item.day ?? ''}" autocomplete="off" aria-label="Jour du mois"> du mois</label></div>` : nameInput}
+          <label class="e-day">${o.dayLabel} le <input class="e-day-in" inputmode="numeric" pattern="[0-9]*" maxlength="2" placeholder="…" value="${item.day ?? ''}" autocomplete="off" aria-label="Jour du mois"> du mois</label></div>` : o.catAmount ? `<div class="e-main">${nameInput}${catLine}</div>` : nameInput}
         ${o.noAmount ? '' : `<span class="money"><input class="e-amount" inputmode="decimal" placeholder="0" value="${centsToInput(amount)}" autocomplete="off" aria-label="Montant par mois"><span class="cur">${esc(currencySymbol(o.currency))}</span></span>`}
         ${o.toggle ? '' : '<button type="button" class="e-del" aria-label="Retirer cette ligne"><svg viewBox="0 0 24 24"><path d="M6 6l12 12M18 6L6 18"/></svg></button>'}
       </div>`;
@@ -536,6 +566,11 @@
     });
     box.addEventListener('change', (e) => {
       if (e.target.classList.contains('e-on')) e.target.closest('.erow').classList.toggle('off', !e.target.checked);
+      if (e.target.classList.contains('e-per')) {
+        const money = e.target.nextElementSibling;
+        money.hidden = e.target.value === 'auto';
+        if (!money.hidden) $('input', money).focus();
+      }
       if (e.target.classList.contains('e-name')) refresh();
       onChange();
     });
@@ -560,7 +595,18 @@
       const rawDay = dayEl ? dayEl.value.trim() : '';
       const day = rawDay ? Number(rawDay) : null;
       if (rawDay && !(Number.isInteger(day) && day >= 1 && day <= 31)) return { error: `Jour invalide pour « ${name} » : mettez un nombre entre 1 et 31.` };
-      items.push({ id: row.dataset.id, name: name.slice(0, 40), amount, day, color: row.dataset.color });
+      const item = { id: row.dataset.id, name: name.slice(0, 40), amount, day, color: row.dataset.color };
+      const perEl = $('.e-per', row);
+      if (perEl) {
+        item.per = perEl.value === 'auto' ? null : perEl.value;
+        item.amount = null;
+        if (item.per) {
+          const v = parseAmount($('.e-cat-amt', row).value.trim());
+          if (Number.isNaN(v) || v === 0) return { error: `Indiquez le montant pour « ${name} » (exemple : 45), ou choisissez « L’app propose ».` };
+          item.amount = v;
+        }
+      }
+      items.push(item);
     }
     if (items.length < min) return { error: `Gardez au moins une ligne dans « ${what} ».` };
     return { items };
@@ -582,7 +628,7 @@
       currency: 'EUR',
       incomes: [{ id: uid(), name: 'Salaire', amount: 0, day: null }],
       fixed: [{ id: uid(), name: 'Loyer', amount: 0, day: null }],
-      categories: SUGGEST.cat.map((name, i) => ({ id: uid(), name, color: PALETTE[i % PALETTE.length], on: DEFAULT_CATS.includes(name) })),
+      categories: SUGGEST.cat.map((name, i) => ({ id: uid(), name, color: PALETTE[i % PALETTE.length], on: DEFAULT_CATS.includes(name), per: null, amount: null })),
       plan: 'equilibre',
       alloc: null,
       livret: 0,
@@ -639,7 +685,7 @@
         <ol class="howto">
           <li><b>Ce que vous recevez</b> : salaire, chômage, aides…</li>
           <li><b>Ce qui part tout seul</b> : loyer, factures, abonnements…</li>
-          <li><b>Vos postes de dépenses</b> : courses, loisirs…</li>
+          <li><b>Vos dépenses de tous les jours</b> : courses, tabac, loisirs…</li>
           <li><b>Votre plan</b> : la répartition proposée par l’app</li>
         </ol>
         <label class="field"><span>Devise</span><select id="d-currency">${currencyOptions(d.currency)}</select></label>`;
@@ -655,9 +701,9 @@
       body = `${editorHTML('fixed', d.fixed, { ...o, ...DAY.fixed, placeholder: 'Nom de la dépense' })}
         <p class="live" id="live"></p>`;
     } else if (s === 3) {
-      title = 'Vos postes de dépenses';
-      intro = 'Cochez ce pour quoi vous voulez un budget chaque mois. Les montants sont proposés à l’étape suivante.';
-      body = `${editorHTML('cat', d.categories, { ...o, toggle: true, noAmount: true })}
+      title = 'Vos dépenses de tous les jours';
+      intro = 'Cochez ce pour quoi vous voulez un budget : courses, tabac, loisirs… Vous connaissez déjà le montant (par exemple 40 € par semaine de courses) ? Indiquez-le. Sinon, l’app propose un montant.';
+      body = `${editorHTML('cat', d.categories, { ...o, toggle: true, noAmount: true, catAmount: true })}
         <p class="live" id="live"></p>`;
     } else {
       title = 'Votre plan';
@@ -691,7 +737,7 @@
     const live = () => updateSetupLive(root);
     if (s === 1) bindEditor(root, 'income', { ...o, ...DAY.income, suggestions: SUGGEST.income, placeholder: 'Nom de la rentrée' }, live);
     if (s === 2) bindEditor(root, 'fixed', { ...o, ...DAY.fixed, suggestions: SUGGEST.fixed, placeholder: 'Nom de la dépense' }, live);
-    if (s === 3) bindEditor(root, 'cat', { ...o, toggle: true, noAmount: true, withColor: true, placeholder: 'Nom du poste' }, live);
+    if (s === 3) bindEditor(root, 'cat', { ...o, toggle: true, noAmount: true, catAmount: true, withColor: true, placeholder: 'Nom du poste' }, live);
     if (s === 4) ui.alloc = bindAlloc(root, setupAllocCtx());
     if (s > 0 && s < 4) live();
 
@@ -721,7 +767,7 @@
       el.innerHTML = `Total : <b>${money(fix)}</b> par mois.<br>Une fois ces dépenses payées, il reste <b class="${inc - fix < 0 ? 'neg' : ''}">${money(inc - fix)}</b>.`;
     } else if (ui.step === 3) {
       const n = $$('[data-editor="cat"] .e-on', root).filter((c) => c.checked).length;
-      el.innerHTML = `${plural(n, 'poste')} ${n > 1 ? 'choisis' : 'choisi'}. Il y a <b>${money(inc - fix)}</b> à répartir entre eux, l’épargne et les imprévus.`;
+      el.innerHTML = `${plural(n, 'poste')} ${n > 1 ? 'choisis' : 'choisi'}. Il y a <b>${money(inc - fix)}</b> à répartir entre eux, l’épargne et une marge pour les imprévus.`;
     }
   }
 
@@ -739,14 +785,17 @@
       d[ui.step === 1 ? 'incomes' : 'fixed'] = r.items.map(({ id, name, amount, day }) => ({ id, name, amount, day }));
     } else if (ui.step === 3) {
       d.alloc = null;
-      const r = readEditor(root, 'cat', { toggle: true, min: 1, what: 'Vos postes de dépenses' });
+      const r = readEditor(root, 'cat', { toggle: true, min: 1, what: 'Vos dépenses de tous les jours' });
       if (r.error) return r.error;
+      const picked = new Map(r.items.map((c) => [c.id, c]));
       d.categories = $$('[data-editor="cat"] .erow', root)
         .map((row, i) => ({
           id: row.dataset.id,
           name: $('.e-name', row).value.trim().slice(0, 40),
           color: row.dataset.color || PALETTE[i % PALETTE.length],
           on: $('.e-on', row).checked,
+          per: picked.has(row.dataset.id) ? picked.get(row.dataset.id).per : null,
+          amount: picked.has(row.dataset.id) ? picked.get(row.dataset.id).amount : null,
         }))
         .filter((c) => c.name);
     } else {
@@ -764,7 +813,7 @@
   function finishSetup() {
     const d = ui.draft;
     const cm = currentMonth();
-    const cats = d.categories.filter((c) => c.on).map(({ id, name, color }) => ({ id, name, color }));
+    const cats = d.categories.filter((c) => c.on).map(({ id, name, color, per, amount }) => ({ id, name, color, per, amount }));
     state = validate({
       version: SCHEMA_VERSION,
       currency: d.currency,
@@ -832,41 +881,51 @@
 
   /* ---------- Mois ---------- */
 
-  function bar(value, max, color) {
-    const pct = max > 0 ? Math.min(value / max, 1) * 100 : 0;
-    return `<div class="bar"><i style="width:${pct.toFixed(1)}%;background:${esc(color)}"></i></div>`;
-  }
+  /** Ligne « nom + petite précision » à gauche, montant à droite. */
+  const lineHTML = (label, detail, amount, cls = '') => `
+    <div class="line${cls ? ` ${cls}` : ''}"><span class="lbl">${label}${detail ? `<small>${detail}</small>` : ''}</span><span class="num">${amount}</span></div>`;
 
-  /** « Combien je peux dépenser par jour » : à partir du solde affiché par la banque. */
+  /** Sur votre compte → ce qui doit encore partir → combien dépenser par jour. */
   function dailyHTML(b) {
     const a = dailyAllowance(b);
     if (!a) {
       const old = state.bank && state.bank.date.slice(0, 7) < b.month;
       return `
-        <section class="hero daily empty">
-          <p class="eyebrow">Combien puis-je dépenser par jour ?</p>
-          <p class="sub">${old ? 'Votre dernier solde date du mois dernier. ' : ''}Regardez combien votre app bancaire affiche sur votre compte courant, et recopiez-le ici.</p>
+        <section class="account empty">
+          <p class="account-label">Sur votre compte aujourd’hui</p>
+          <p class="note">${old ? 'Votre dernier solde date du mois dernier. ' : ''}Recopiez le montant affiché par l’app de votre banque : l’app calcule combien vous pouvez dépenser par jour.</p>
           <button type="button" class="btn primary" data-bank>Entrer mon solde</button>
         </section>`;
     }
     const stale = daysSince(a.bank.date) > 0;
-    const until = `${daysInMonth(b.month)} ${monthName(b.month)}`;
+    const dim = daysInMonth(b.month);
+    const dayOf = (x) => Math.min(x.item.day, dim);
     return `
-      <section class="hero daily">
-        <p class="eyebrow">Vous pouvez dépenser</p>
-        <p class="big num${a.left < 0 ? ' neg' : ''}">${a.left > 0 ? money(a.perDay) : money(0)}<span class="per"> par jour</span></p>
-        <p class="sub">${a.left > 0
-          ? `jusqu’au ${until}, soit ${money(a.left)} en ${plural(a.daysLeft, 'jour')}.`
-          : `Il manque ${money(-a.left)} pour payer ce qui doit encore partir ce mois-ci.`}</p>
-        <div class="calc">
-          <div class="line"><span>Sur votre compte ${stale ? `le ${esc(shortDate(a.bank.date))}` : 'aujourd’hui'}</span><span class="num">${money(a.bank.amount)}</span></div>
-          ${a.toCome.map((x) => `<div class="line"><span>${esc(x.item.name)} <small>${x.item.day ? `le ${Math.min(x.item.day, daysInMonth(b.month))}` : 'jour non indiqué'}</small></span><span class="num">−${money(x.amount)}</span></div>`).join('')}
-          ${a.saveToCome ? `<div class="line"><span>Épargne à virer sur le livret</span><span class="num">−${money(a.saveToCome)}</span></div>` : ''}
-          <div class="line total"><span>À dépenser d’ici la fin du mois</span><span class="num${a.left < 0 ? ' neg' : ''}">${money(a.left)}</span></div>
-        </div>
-        <p class="note">L’argent qui n’est pas encore arrivé n’est pas compté.</p>
-        <button type="button" class="btn${stale ? ' primary' : ''}" data-bank>${stale ? 'Mettre à jour mon solde' : 'Changer mon solde'}</button>
-      </section>`;
+      <section class="account">
+        <p class="account-label">Sur votre compte ${stale ? `le ${esc(shortDate(a.bank.date))}` : 'aujourd’hui'}</p>
+        <p class="account-amount num${a.bank.amount < 0 ? ' neg' : ''}">${money(a.bank.amount)}</p>
+        ${stale
+          ? `<p class="account-stale">Ce montant n’est plus à jour.</p><button type="button" class="btn primary" data-bank>Mettre à jour</button>`
+          : '<button type="button" class="link" data-bank>Modifier</button>'}
+      </section>
+
+      <section class="block">
+        <h2 class="sec">Ce qui doit encore partir</h2>
+        ${a.toCome.map((x) => lineHTML(esc(x.item.name), x.item.day ? `prélevé le ${dayOf(x)}` : 'jour non indiqué : compté par prudence', `−${money(x.amount)}`)).join('')}
+        ${a.saveToCome ? lineHTML('Épargne', 'à virer sur le livret', `−${money(a.saveToCome)}`) : ''}
+        ${!a.toCome.length && !a.saveToCome ? '<p class="note">Plus rien à payer d’ici la fin du mois.</p>' : ''}
+        ${lineHTML('Reste pour finir le mois', '', money(a.left), `total${a.left < 0 ? ' neg' : ''}`)}
+      </section>
+
+      <section class="perday${a.left <= 0 ? ' short' : ''}">
+        <p class="perday-label">Vous pouvez dépenser</p>
+        <p class="perday-amount num">${money(a.left > 0 ? a.perDay : 0)}<span> par jour</span></p>
+        <p class="perday-sub">${a.left > 0
+          ? `jusqu’au ${dim} ${esc(monthName(b.month))} (${plural(a.daysLeft, 'jour')})`
+          : `Il manque ${money(-a.left)} pour payer ce qui doit encore partir.`}</p>
+      </section>
+      ${a.incomesToCome.length ? `
+        <p class="note">Pas encore compté, car pas encore arrivé : ${a.incomesToCome.map((x) => `${esc(x.item.name)} +${money(x.amount)} le ${dayOf(x)}`).join(', ')}.</p>` : ''}`;
   }
 
   function renderMonth() {
@@ -882,39 +941,36 @@
 
     const cats = state.categories.map((c) => {
       const amount = b.budgets.get(c.id) || 0;
-      return `
-        <div class="line"><span><span class="dot" style="background:${esc(c.color)}"></span> ${esc(c.name)}${amount ? ` <small>environ ${roundMoney(amount * 12 / 52)} par semaine</small>` : ''}</span><span class="num">${money(amount)}</span></div>`;
+      const detail = c.per === 'week' ? esc(knownLabel(c)) : c.per || !amount ? '' : `environ ${roundMoney(amount * 12 / 52)} par semaine`;
+      return lineHTML(`<span><span class="dot" style="background:${esc(c.color)}"></span> ${esc(c.name)}</span>`, detail, money(amount));
     }).join('');
 
     $('#view-month').innerHTML = `
-      ${isCur ? dailyHTML(b) : ''}
-
       ${!b.confirmed && m >= cm ? `
-        <div class="tip warn">
+        <div class="tip warn top-tip">
           <p>${isCur ? 'Nouveau mois' : capitalize(monthName(m))} : vérifiez ce que vous allez recevoir, puis validez votre budget.</p>
           <button type="button" class="link inline" data-go="edit">Vérifier</button>
         </div>` : ''}
+
+      ${isCur ? dailyHTML(b) : ''}
 
       ${isCur ? backupTipHTML() : ''}
 
       <section class="block">
         <h2 class="sec">Budget ${esc(ofMonth(m))}${b.confirmed ? '' : ' <span class="muted">proposé</span>'}</h2>
-        <div class="line"><span>Vous recevez</span><span class="num pos">+${money(b.income)}</span></div>
-        <div class="line"><span>Loyer, factures, abonnements</span><span class="num">−${money(b.fixedTotal)}</span></div>
-        <div class="line total"><span>À répartir</span><span class="num${b.free < 0 ? ' neg' : ''}">${money(b.free)}</span></div>
+        ${lineHTML('Vous recevez', '', `+${money(b.income)}`, 'pos-line')}
+        ${lineHTML('Loyer, factures, abonnements', '', `−${money(b.fixedTotal)}`)}
+        ${lineHTML('Reste à répartir', '', money(b.free), `total${b.free < 0 ? ' neg' : ''}`)}
 
-        <h3 class="sub-sec">À mettre de côté</h3>
-        <div class="line save-line">
-          <span>Épargne <small>virement vers le livret</small></span>
-          <span class="num">${money(b.save)}</span>
-        </div>
+        <h3 class="sub-sec">Mettre de côté</h3>
+        ${lineHTML('Épargne', 'virement vers le livret', money(b.save), 'save-line')}
         ${b.confirmed && b.save ? `
           <button type="button" class="save-done${b.saveDone ? ' on' : ''}" data-save-done aria-pressed="${b.saveDone}">
             <span class="box" aria-hidden="true"></span>${b.saveDone ? 'Virement fait' : 'J’ai fait le virement'}
           </button>` : ''}
 
-        ${state.categories.length ? `<h3 class="sub-sec">À dépenser dans le mois</h3>${cats}` : ''}
-        <div class="line"><span>Marge pour les imprévus</span><span class="num${b.margin < 0 ? ' neg' : ''}">${money(b.margin)}</span></div>
+        ${state.categories.length ? `<h3 class="sub-sec">Dépenses de tous les jours</h3>${cats}` : ''}
+        ${lineHTML('Marge pour les imprévus', 'ce qui n’est pas réparti', money(b.margin), b.margin < 0 ? 'neg' : '')}
         ${b.margin < 0 ? '<p class="msg warn">Vous prévoyez plus que ce qu’il y a à répartir. Baissez un montant.</p>' : ''}
         ${m >= cm ? `<button type="button" class="btn" data-go="edit">${b.confirmed ? 'Modifier le budget' : 'Vérifier et valider'}</button>` : ''}
       </section>`;
@@ -1239,9 +1295,9 @@
       </section>
 
       <section class="block">
-        <h2 class="sec">Vos postes de dépenses</h2>
-        <p class="note">Courses, loisirs… L’app propose un montant pour chacun, chaque mois.</p>
-        ${editorHTML('cat', state.categories, { ...o, noAmount: true, placeholder: 'Nom du poste' })}
+        <h2 class="sec">Dépenses de tous les jours</h2>
+        <p class="note">Courses, tabac, loisirs… Indiquez le montant si vous le connaissez, sinon l’app le propose chaque mois.</p>
+        ${editorHTML('cat', state.categories, { ...o, noAmount: true, catAmount: true, placeholder: 'Nom du poste' })}
       </section>
 
       <section class="block">
@@ -1273,7 +1329,7 @@
     };
     bindEditor(root, 'income', { ...o, ...DAY.income, suggestions: SUGGEST.income, placeholder: 'Nom de la rentrée' }, totals);
     bindEditor(root, 'fixed', { ...o, ...DAY.fixed, suggestions: SUGGEST.fixed, placeholder: 'Nom de la dépense' }, totals);
-    bindEditor(root, 'cat', { ...o, noAmount: true, withColor: true, suggestions: SUGGEST.cat, placeholder: 'Nom du poste' });
+    bindEditor(root, 'cat', { ...o, noAmount: true, catAmount: true, withColor: true, suggestions: SUGGEST.cat, placeholder: 'Nom du poste' });
     totals();
 
     $('#set-save', root).addEventListener('click', () => {
@@ -1282,12 +1338,12 @@
       if (ri.error) return err(ri.error);
       const rf = readEditor(root, 'fixed', { what: 'Ce qui part tout seul' });
       if (rf.error) return err(rf.error);
-      const rc = readEditor(root, 'cat', { what: 'Vos postes de dépenses' });
+      const rc = readEditor(root, 'cat', { what: 'Dépenses de tous les jours' });
       if (rc.error) return err(rc.error);
-      const before = { incomes: new Map(state.incomes.map((x) => [x.id, x.amount])), fixed: new Map(state.fixed.map((x) => [x.id, x.amount])) };
+      const before = { incomes: new Map(state.incomes.map((x) => [x.id, x.amount])), fixed: new Map(state.fixed.map((x) => [x.id, x.amount])), cats: new Map(state.categories.map((c) => [c.id, catMonthly(c)])) };
       state.incomes = ri.items.map(({ id, name, amount, day }) => ({ id, name, amount, day }));
       state.fixed = rf.items.map(({ id, name, amount, day }) => ({ id, name, amount, day }));
-      state.categories = rc.items.map(({ id, name, color }, i) => ({ id, name, color: color || PALETTE[i % PALETTE.length] }));
+      state.categories = rc.items.map(({ id, name, color, per, amount }, i) => ({ id, name, color: color || PALETTE[i % PALETTE.length], per, amount }));
       state.currency = $('#set-currency', root).value;
       // Le budget du mois en cours suit les montants habituels qui viennent de changer.
       const rec = state.months[currentMonth()];
@@ -1295,6 +1351,7 @@
         for (const [key, list] of [['incomes', state.incomes], ['fixed', state.fixed]]) {
           for (const item of list) if (before[key].get(item.id) !== item.amount) rec[key][item.id] = item.amount;
         }
+        for (const c of state.categories) if (c.per && before.cats.get(c.id) !== catMonthly(c)) rec.budgets[c.id] = catMonthly(c);
       }
       if (!save()) return;
       toast('Réglages enregistrés');
