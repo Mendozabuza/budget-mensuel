@@ -10,7 +10,7 @@ Petite web app de budget mensuel guidée, pensée pour iPhone. HTML/CSS/JS sans 
 - **Importer des opérations** : relevé bancaire (OFX ou CSV, par exemple Crédit Agricole ou Caisse d’Épargne) ou journal des paiements Apple Pay écrit par un raccourci iOS (`date;montant;commerçant` par ligne). L’app propose une catégorie (et retient vos corrections), écarte les doublons (déjà notés, déjà comptés dans les rentrées ou dépenses fixes, déjà importés) et vous laisse tout vérifier avant d’ajouter. Le relevé d’un livret d’épargne s’importe aussi (onglet Épargne) : versements = mis de côté, retraits = argent revenu sur le compte, intérêts ajoutés au total d’épargne. Le fichier est lu sur l’appareil, rien n’est envoyé.
 - **Ajouter** : dépense du quotidien, rentrée ponctuelle (prime, remboursement…) ou épargne (mettre de côté / retirer).
 - **Épargne** : total épargné et sa courbe d’évolution, objectif du mois, historique mois par mois avec l’argent non dépensé.
-- **Historique** : opérations notées du mois ; toucher une ligne pour la modifier.
+- **Historique** : opérations notées du mois, séparées entre « Compte courant » et « Épargne » ; toucher une ligne pour la modifier.
 - **Réglages** : tout modifier, **Exporter / Importer** en JSON, tout effacer. L’app indique la date de la dernière sauvegarde et rappelle d’en faire une (une semaine après la première opération, puis tous les 30 jours).
 - Fonctionne **hors ligne** une fois chargée (service worker) et s’installe sur l’écran d’accueil.
 

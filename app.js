@@ -38,6 +38,7 @@
     addType: 'expense',   // expense | income | saving
     saveDir: 'in',        // in (mettre de côté) | out (retirer)
     editingId: null,
+    historyTab: 'account', // account (compte courant : dépenses et rentrées) | savings (mouvements d’épargne)
     lastCategoryId: null,
     step: 0,
     draft: null,
@@ -1704,21 +1705,40 @@
 
   function renderHistory() {
     const s = summary(ui.month);
-    const tx = s.tx
+    const isSaving = (t) => t.type === 'saving' || t.type === 'withdrawal';
+    const onSavings = ui.historyTab === 'savings';
+    const all = s.tx
       .map((t, i) => ({ t, i }))
       .sort((a, b) => (b.t.date.localeCompare(a.t.date)) || (b.i - a.i))
       .map((x) => x.t);
+    const tx = all.filter((t) => isSaving(t) === onSavings);
+    const nSavings = all.filter(isSaving).length;
 
+    const savedIn = sum(all.filter((t) => t.type === 'saving'), (t) => t.amount);
+    const savedOut = sum(all.filter((t) => t.type === 'withdrawal'), (t) => t.amount);
     const head = `
+      <div class="segmented" data-seg="history" role="group">
+        <button type="button" data-value="account" class="${onSavings ? '' : 'active'}" aria-pressed="${!onSavings}">Compte courant (${all.length - nSavings})</button>
+        <button type="button" data-value="savings" class="${onSavings ? 'active' : ''}" aria-pressed="${onSavings}">Épargne (${nSavings})</button>
+      </div>
       <section class="block">
-        <div class="line"><span>Dépenses du quotidien</span><span class="num">−${money(s.varSpent)}</span></div>
-        ${s.extraIncome ? `<div class="line"><span>Rentrées ponctuelles</span><span class="num">+${money(s.extraIncome)}</span></div>` : ''}
-        ${s.savedNet ? `<div class="line"><span>Épargne</span><span class="num">${money(s.savedNet)}</span></div>` : ''}
-        <p class="note">Les rentrées et dépenses fixes sont comptées automatiquement : voir l’onglet Mois.</p>
+        ${onSavings ? `
+          <div class="line"><span>Mis de côté</span><span class="num pos">+${money(savedIn)}</span></div>
+          ${savedOut ? `<div class="line"><span>Repris vers le compte</span><span class="num">−${money(savedOut)}</span></div>` : ''}
+          <p class="note">Les mouvements de votre épargne (Livret A…) ce mois-ci, vus depuis le livret.</p>` : `
+          <div class="line"><span>Dépenses du quotidien</span><span class="num">−${money(s.varSpent)}</span></div>
+          ${s.extraIncome ? `<div class="line"><span>Rentrées ponctuelles</span><span class="num">+${money(s.extraIncome)}</span></div>` : ''}
+          <p class="note">Les rentrées et dépenses fixes sont comptées automatiquement : voir l’onglet Mois.</p>`}
       </section>`;
 
+    const bindTabs = () => $$('[data-seg="history"] button', $('#view-history')).forEach((b) => b.addEventListener('click', () => {
+      ui.historyTab = b.dataset.value;
+      renderHistory();
+    }));
+
     if (!tx.length) {
-      $('#view-history').innerHTML = `${head}<p class="empty">Aucune opération notée ce mois-ci.</p>`;
+      $('#view-history').innerHTML = `${head}<p class="empty">${onSavings ? 'Aucun mouvement d’épargne ce mois-ci.' : 'Aucune opération notée ce mois-ci.'}</p>`;
+      bindTabs();
       return;
     }
 
@@ -1731,9 +1751,9 @@
 
     const rowHTMLTx = (t) => {
       const cat = t.type === 'expense' ? categoryById(t.categoryId) : null;
-      const label = { income: 'Rentrée', saving: 'Mis de côté', withdrawal: 'Retrait d’épargne' }[t.type] || (cat ? cat.name : 'Sans catégorie');
-      const sign = t.type === 'income' || t.type === 'withdrawal' ? '+' : '−';
-      const cls = t.type === 'income' ? ' pos' : '';
+      const label = { income: 'Rentrée', saving: 'Mis de côté', withdrawal: 'Repris vers le compte' }[t.type] || (cat ? cat.name : 'Sans catégorie');
+      const sign = t.type === 'income' || t.type === 'saving' ? '+' : '−'; // l’épargne est vue depuis le livret
+      const cls = t.type === 'income' || t.type === 'saving' ? ' pos' : '';
       return `
         <button type="button" class="tx-row" data-id="${esc(t.id)}">
           <span class="dot" style="background:${esc(cat ? cat.color : 'var(--muted)')}"></span>
@@ -1751,6 +1771,7 @@
         <h3 class="day">${esc(capitalize(dayLabel(g.date)))}</h3>
         <div class="tx-list">${g.items.map(rowHTMLTx).join('')}</div>`).join('')}
       <p class="note center">Touchez une opération pour la modifier.</p>`;
+    bindTabs();
 
     $$('.tx-row', $('#view-history')).forEach((row) => row.addEventListener('click', () => {
       ui.editingId = row.dataset.id;
