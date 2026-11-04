@@ -990,25 +990,6 @@
         : `Total du mois : ${money(acc)} pour un budget de ${money(planned)}.`}</p>`;
   }
 
-  /** 5. Où part le quotidien : catégories triées de la plus grosse à la plus petite. */
-  function shareHTML(s) {
-    const rows = [...s.spentBy]
-      .map(([id, amount]) => ({ name: (categoryById(id) || {}).name || 'Sans catégorie', amount }))
-      .filter((r) => r.amount > 0)
-      .sort((a, b) => b.amount - a.amount);
-    if (rows.length < 2) return '';
-    const max = rows[0].amount;
-    return `
-      <div class="share" role="img" aria-label="Répartition du quotidien : ${esc(rows.map((r) => `${r.name} ${Math.round(r.amount / s.varSpent * 100)} %`).join(', '))}">
-        ${rows.map((r, i) => `
-          <div class="share-row">
-            <span class="share-name">${esc(r.name)}</span>
-            <span class="share-bar"><i class="${i ? '' : 'top'}" style="width:${fx(r.amount / max * 100)}%"></i></span>
-            <span class="num share-pct">${Math.round(r.amount / s.varSpent * 100)} %</span>
-          </div>`).join('')}
-      </div>`;
-  }
-
   /** 3. Les 6 derniers mois : rentrées face aux dépenses (fixes + quotidien). */
   function monthsHTML() {
     const cm = currentMonth();
@@ -1077,9 +1058,10 @@
 
   /* ---------- Vue du mois ---------- */
 
-  function bar(value, max, cls = '') {
+  function bar(value, max, cls = '', color = '') {
     const pct = max > 0 ? Math.min(value / max, 1) * 100 : (value > 0 ? 100 : 0);
-    return `<div class="bar ${cls}"><i style="width:${pct.toFixed(1)}%"></i></div>`;
+    const bg = color && !cls ? `;background:${esc(color)}` : ''; // en rouge si dépassé
+    return `<div class="bar ${cls}"><i style="width:${pct.toFixed(1)}%${bg}"></i></div>`;
   }
 
   function tips(s, month) {
@@ -1188,7 +1170,7 @@
             <span class="name"><span class="dot" style="background:${esc(c.color)}"></span>${esc(c.name)}</span>
             <span class="num">${money(spent)} <span class="muted">/ ${money(c.budget)}</span></span>
           </div>
-          ${bar(spent, c.budget, diff < 0 ? 'over' : '')}
+          ${bar(spent, c.budget, diff < 0 ? 'over' : '', c.color)}
           <div class="cat-left${diff < 0 ? ' neg' : ''}">${diff >= 0 ? `Reste ${money(diff)}` : `Dépassé de ${money(-diff)}`}</div>
         </div>`;
     });
@@ -1203,7 +1185,9 @@
 
     $('#view-month').innerHTML = `
       <section class="hero">
-        <p class="eyebrow">${s.remaining >= 0 ? 'Il vous reste' : 'Dépassement'}</p>
+        <p class="eyebrow">${isCur
+          ? (s.remaining >= 0 ? 'Il vous restera en fin de mois' : 'Dépassement prévu en fin de mois')
+          : (s.remaining >= 0 ? 'Il vous reste' : 'Dépassement')}</p>
         <p class="big num${s.remaining < 0 ? ' neg' : ''}">${money(Math.abs(s.remaining))}</p>
         <p class="sub">${sub}</p>
       </section>
@@ -1242,8 +1226,8 @@
           </div>
         </details>
         <div class="line flowrow"><span>Dépenses du quotidien</span><span class="num">−${money(s.varSpent)}</span></div>
-        <div class="line flowrow"><span>Épargne</span><span class="num">${s.savedNet > 0 ? '−' : s.savedNet < 0 ? '+' : ''}${money(Math.abs(s.savedNet))}</span></div>
-        <div class="line total"><span>Il reste</span><span class="num${s.remaining < 0 ? ' neg' : ''}">${money(s.remaining)}</span></div>
+        ${s.savedNet ? `<div class="line flowrow"><span>Épargne</span><span class="num">${s.savedNet > 0 ? '−' : '+'}${money(Math.abs(s.savedNet))}</span></div>` : ''}
+        <div class="line total"><span>${isCur ? 'Il restera' : 'Il reste'}</span><span class="num${s.remaining < 0 ? ' neg' : ''}">${money(s.remaining)}</span></div>
       </section>
 
       ${upcomingHTML(s, m)}
@@ -1256,7 +1240,6 @@
 
       <section class="block">
         <h2 class="sec">Budget du quotidien <span class="muted">${money(s.varSpent)} / ${money(s.varPlanned)}</span></h2>
-        ${shareHTML(s)}
         ${catLines.join('')}
         ${isCur ? '<button type="button" class="link" data-go="plan">Répartir mon mois</button>' : ''}
       </section>
@@ -1601,8 +1584,8 @@
     const head = `
       <section class="block">
         <div class="line"><span>Dépenses du quotidien</span><span class="num">−${money(s.varSpent)}</span></div>
-        <div class="line"><span>Rentrées ponctuelles</span><span class="num">+${money(s.extraIncome)}</span></div>
-        <div class="line"><span>Épargne</span><span class="num">${money(s.savedNet)}</span></div>
+        ${s.extraIncome ? `<div class="line"><span>Rentrées ponctuelles</span><span class="num">+${money(s.extraIncome)}</span></div>` : ''}
+        ${s.savedNet ? `<div class="line"><span>Épargne</span><span class="num">${money(s.savedNet)}</span></div>` : ''}
         <p class="note">Les rentrées et dépenses fixes sont comptées automatiquement : voir l’onglet Mois.</p>
       </section>`;
 
@@ -1627,8 +1610,8 @@
         <button type="button" class="tx-row" data-id="${esc(t.id)}">
           <span class="dot" style="background:${esc(cat ? cat.color : 'var(--muted)')}"></span>
           <span class="info">
-            <span class="t">${esc(label)}</span>
-            ${t.note ? `<span class="n">${esc(t.note)}</span>` : ''}
+            <span class="t">${esc(t.note || label)}</span>
+            ${t.note ? `<span class="n">${esc(label)}</span>` : ''}
           </span>
           <span class="num amt${cls}">${sign}${money(t.amount)}</span>
         </button>`;

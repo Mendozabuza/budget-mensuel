@@ -241,13 +241,6 @@ details.flow[open] > summary > span:first-child::after { transform: translateY(1
 .ch-save-area { fill: var(--pos); opacity: .12; }
 .ch-save-dot { fill: var(--pos); stroke: var(--bg); stroke-width: 2; }
 
-.share { padding: 12px 0 8px; border-bottom: 1px solid var(--line); }
-.share-row { display: grid; grid-template-columns: minmax(0, 96px) 1fr 40px; align-items: center; gap: 10px; padding: 4px 0; font-size: 14px; }
-.share-name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.share-bar { height: 10px; }
-.share-bar i { display: block; height: 100%; min-width: 2px; border-radius: 0 3px 3px 0; background: var(--muted); }
-.share-bar i.top { background: var(--text); }
-.share-pct { text-align: right; font-size: 13px; color: var(--muted); }
 
 /* Conseils */
 .tip {
@@ -553,13 +546,10 @@ body { overflow-x: clip; } /* les glissements ne créent pas de défilement hori
   dialog.closing::backdrop { animation: fade-out .24s ease-in forwards; }
 
   /* Les graphiques se remplissent à l'ouverture */
-  .stack span, .share-bar i { transform-origin: left; animation: grow-x .5s cubic-bezier(.2, .8, .2, 1) backwards; }
+  .stack span, .cat .bar > i { transform-origin: left; animation: grow-x .5s cubic-bezier(.2, .8, .2, 1) backwards; }
   .stack span:nth-child(2) { animation-delay: .08s; }
   .stack span:nth-child(3) { animation-delay: .16s; }
   .stack span:nth-child(4) { animation-delay: .24s; }
-  .share-row:nth-child(2) i { animation-delay: .05s; }
-  .share-row:nth-child(3) i { animation-delay: .1s; }
-  .share-row:nth-child(n+4) i { animation-delay: .15s; }
   .ch-inc, .ch-out { transform-box: fill-box; transform-origin: bottom; animation: grow-y .45s cubic-bezier(.2, .8, .2, 1) backwards; }
   .ch-line, .ch-dot, .ch-save-line, .ch-save-area, .ch-save-dot { animation: fade-in .5s .15s ease-out backwards; }
 }
