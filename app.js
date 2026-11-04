@@ -565,7 +565,7 @@
     const field = (attrs, cents, label) => `<span class="money"><input ${attrs} inputmode="decimal" placeholder="0" value="${centsToInput(cents)}" autocomplete="off" aria-label="${esc(label)}"><span class="cur">${esc(currencySymbol())}</span></span>`;
     const avgNote = (c) => {
       const a = ctx.hist && ctx.hist.avg.get(c.id);
-      return a ? `<small>en moyenne ${roundMoney(a)} par mois</small>` : '';
+      return a ? `<small>vous dépensez en moyenne ${roundMoney(a)} par mois</small>` : '';
     };
     return `
       <div class="alloc">
@@ -578,9 +578,13 @@
         <p class="note plan-text">${esc(PLANS[planKey].text)}</p>
         ${ctx.hist ? `<p class="note">Les budgets proposés suivent vos dépenses ${ctx.hist.months > 1 ? `des ${ctx.hist.months} derniers mois` : 'du mois dernier'}, avec un peu de marge. S’il reste de la place, elle va dans l’épargne.</p>` : ''}
         <div class="alloc-rows">
-          <label class="alloc-row"><span class="alloc-name">Épargne<small>à mettre de côté en début de mois</small></span>${field('data-alloc="save"', values.save, 'Épargne')}</label>
+          ${ctx.cats.length ? `
+            <h3 class="alloc-sec">Ce que vous pouvez dépenser</h3>
+            <p class="note">Le budget conseillé pour chaque catégorie du quotidien, pour tout le mois.</p>` : ''}
           ${ctx.cats.map((c) => `
-            <label class="alloc-row"><span class="alloc-name"><span><span class="dot" style="background:${esc(c.color)}"></span> ${esc(c.name)}</span>${avgNote(c)}</span>${field(`data-alloc="cat" data-id="${esc(c.id)}"`, values.budgets.get(c.id) || 0, c.name)}</label>`).join('')}
+            <label class="alloc-row"><span class="alloc-name"><span><span class="dot" style="background:${esc(c.color)}"></span> ${esc(c.name)}</span><small data-week></small>${avgNote(c)}</span>${field(`data-alloc="cat" data-id="${esc(c.id)}"`, values.budgets.get(c.id) || 0, c.name)}</label>`).join('')}
+          <h3 class="alloc-sec">Ce que vous mettez de côté</h3>
+          <label class="alloc-row"><span class="alloc-name">Épargne<small>à mettre de côté en début de mois</small></span>${field('data-alloc="save"', values.save, 'Épargne')}</label>
           <div class="alloc-row cushion"><span class="alloc-name">Coussin imprévus<small>ce qui reste, centimes compris</small></span><span class="num" data-cushion></span></div>
         </div>
         <p class="msg warn" data-alloc-warn hidden></p>
@@ -604,6 +608,11 @@
     const refresh = () => {
       const v = values();
       const cushion = ctx.income - ctx.fixed - v.save - sum([...v.budgets.values()], (x) => x);
+      for (const el of inputs()) {
+        const week = el.closest('.alloc-row').querySelector('[data-week]');
+        const v = readMoneyInput(el);
+        if (week) week.textContent = v > 0 ? `soit environ ${roundMoney(v * 12 / 52)} par semaine` : '';
+      }
       const cell = $('[data-cushion]', root);
       cell.textContent = money(cushion);
       cell.classList.toggle('neg', cushion < 0);
@@ -725,7 +734,7 @@
           <li><b>Ce qui rentre</b> : salaire, aides…</li>
           <li><b>Ce qui sort chaque mois</b> : loyer, factures, abonnements…</li>
           <li><b>Le quotidien</b> : courses, loisirs…</li>
-          <li><b>Ce que vous mettez de côté</b></li>
+          <li><b>Votre plan</b> : l’app vous propose combien prévoir pour les courses, les loisirs… et combien mettre de côté</li>
         </ol>
         <label class="field"><span>Devise</span><select id="d-currency">${currencyOptions(d.currency)}</select></label>`;
       next = 'Commencer';
@@ -1198,7 +1207,7 @@
 
       ${isCur && state.planMonth !== cm && state.categories.length ? `
         <div class="tip plan-tip">
-          <p>Votre plan de ${esc(monthName(cm))} est prêt : épargne et budgets, arrondis à la dizaine.</p>
+          <p>Votre plan de ${esc(monthName(cm))} est prêt : combien prévoir pour chaque catégorie et combien mettre de côté.</p>
           <button type="button" class="link inline" data-go="plan">Voir</button>
         </div>` : ''}
 
@@ -1241,7 +1250,11 @@
       <section class="block">
         <h2 class="sec">Budget du quotidien <span class="muted">${money(s.varSpent)} / ${money(s.varPlanned)}</span></h2>
         ${catLines.join('')}
-        ${isCur ? '<button type="button" class="link" data-go="plan">Répartir mon mois</button>' : ''}
+        ${isCur ? `
+          <div class="tip plan-cta">
+            <p>Combien prévoir pour chaque catégorie ? L’app vous le calcule.</p>
+            <button type="button" class="link inline" data-go="plan">Voir</button>
+          </div>` : ''}
       </section>
 
       <section class="block">

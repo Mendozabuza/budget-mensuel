@@ -494,6 +494,9 @@ dialog h2 { font-size: 20px; font-weight: 600; }
 .plans { margin-top: 16px; }
 .plan-text { min-height: 2.9em; }
 .alloc-rows { margin-top: 12px; }
+.alloc-sec { margin: 22px 0 2px; font-size: 13px; font-weight: 600; letter-spacing: .06em; text-transform: uppercase; color: var(--muted); }
+.alloc-sec + .note { margin-top: 2px; }
+.plan-cta { margin-top: 14px; }
 .alloc-row { display: flex; align-items: center; justify-content: space-between; gap: 12px; min-height: 58px; border-bottom: 1px solid var(--line); }
 .alloc-row .money { width: 120px; flex: none; padding: 8px 10px; border-radius: 8px; background: var(--soft); }
 .alloc-row .money:focus-within { outline: 1.5px solid var(--text); }

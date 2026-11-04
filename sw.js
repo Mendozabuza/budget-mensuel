@@ -1,5 +1,5 @@
 /* Service worker : permet d’ouvrir l’app sans réseau. Aucune donnée budgétaire ne transite ici. */
-const CACHE = 'budget-v10';
+const CACHE = 'budget-v11';
 const ASSETS = [
   './',
   './index.html',
