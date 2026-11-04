@@ -1687,6 +1687,7 @@
           <button type="button" class="btn primary" data-go="save">Mettre de côté</button>
           <button type="button" class="btn" data-go="withdraw">Reprendre</button>
         </div>
+        <button type="button" class="link" data-bank-import="savings">Importer le relevé de votre épargne (Livret A…)</button>
       </section>
 
       <section class="block">
@@ -1696,6 +1697,7 @@
       </section>`;
 
     bindGo($('#view-savings'));
+    bindBankImport($('#view-savings'));
   }
 
   /* ---------- Historique ---------- */
@@ -1797,7 +1799,8 @@
       <section class="block" style="margin-top:40px">
         <h2 class="sec">Importer des opérations</h2>
         <p class="note">Plutôt que tout noter à la main : importez le relevé de votre banque ou le journal de vos paiements Apple Pay. L’app trie, propose une catégorie et écarte les doublons avant que vous validiez.</p>
-        <button type="button" class="btn" data-bank-import>Choisir un fichier</button>
+        <button type="button" class="btn" data-bank-import>Relevé du compte courant</button>
+        <button type="button" class="btn" data-bank-import="savings">Relevé de l’épargne (Livret A…)</button>
         ${IMPORT_GUIDES}
       </section>
 
@@ -2188,7 +2191,13 @@
   const SAVING_RE = /livret|\bldds?\b|\blep\b|\bpel\b|\bcel\b|epargne|assurance vie/;
 
   /** Classe chaque ligne : à ajouter, déjà notée (Apple Pay ou à la main) ou déjà comptée (fixes, rentrées). */
-  function analyzeImport(parsed) {
+  /**
+   * account : 'current' (compte courant) ou 'savings' (livret). Sur un livret, un versement
+   * est de l’argent mis de côté, un retrait revient sur le compte, et les intérêts
+   * s’ajoutent seulement au total d’épargne.
+   */
+  function analyzeImport(parsed, account = 'current') {
+    const onSavings = account === 'savings' && parsed.source !== 'applepay';
     const known = new Set([...state.seenRefs, ...state.transactions.map((t) => t.ref).filter(Boolean)]);
     const used = new Set();
     const days = (a, b) => Math.abs(new Date(a) - new Date(b)) / 86400000;
@@ -2201,7 +2210,8 @@
       const amount = Math.abs(it.amount);
       const month = it.date.slice(0, 7);
       let type = it.amount < 0 ? 'expense' : 'income';
-      if (parsed.source !== 'applepay' && SAVING_RE.test(strip(it.label))) type = it.amount < 0 ? 'saving' : 'withdrawal';
+      if (onSavings) type = it.amount < 0 ? 'withdrawal' : INTEREST_RE.test(strip(it.label)) ? 'interest' : 'saving';
+      else if (parsed.source !== 'applepay' && SAVING_RE.test(strip(it.label))) type = it.amount < 0 ? 'saving' : 'withdrawal';
       let status = 'new', reason = '';
 
       const twin = state.transactions.find((t) => !used.has(t.id) && t.type === type && t.amount === amount && days(t.date, it.date) <= 3);
@@ -2232,7 +2242,7 @@
       });
     }
     rows.sort((a, b) => b.date.localeCompare(a.date));
-    return { source: parsed.source, rows, already, unreadable };
+    return { source: parsed.source, account: onSavings ? 'savings' : 'current', rows, already, unreadable };
   }
 
   const IMPORT_GUIDES = `
@@ -2275,7 +2285,7 @@
     </details>
     <p class="note">Le fichier est lu sur ce téléphone uniquement : rien n’est envoyé sur Internet.</p>`;
 
-  async function bankImportFile(file) {
+  async function bankImportFile(file, account = 'current') {
     if (file.size > MAX_IMPORT_BYTES) { alert('Import impossible : fichier trop volumineux.'); return; }
     let parsed;
     try { parsed = parseStatement(await readText(file)); } catch { parsed = null; }
@@ -2283,7 +2293,7 @@
       alert('Ce fichier n’a pas pu être lu. Utilisez un export OFX ou CSV de votre banque, ou le journal Apple Pay (voir Réglages › Importer des opérations).');
       return;
     }
-    const result = analyzeImport(parsed);
+    const result = analyzeImport(parsed, account);
     if (!result.rows.length) {
       alert(result.already ? 'Rien de nouveau : toutes les opérations de ce fichier ont déjà été importées.' : 'Aucune opération trouvée dans ce fichier.');
       return;
@@ -2293,22 +2303,27 @@
   }
 
   function bindBankImport(root) {
-    $$('[data-bank-import]', root).forEach((b) => b.addEventListener('click', () => $('#bank-file').click()));
+    $$('[data-bank-import]', root).forEach((b) => b.addEventListener('click', () => {
+      ui.importAccount = b.dataset.bankImport === 'savings' ? 'savings' : 'current';
+      $('#bank-file').click();
+    }));
   }
 
-  const TYPE_LABELS = { income: 'Rentrée', saving: 'Mis de côté', withdrawal: 'Retrait d’épargne' };
+  const TYPE_LABELS = { income: 'Rentrée', saving: 'Mis de côté', withdrawal: 'Retrait d’épargne', interest: 'Intérêts, ajoutés au total d’épargne' };
+  const INTEREST_RE = /\binter[eê]ts?\b|\bremuneration\b/;
 
   function renderImport() {
     const view = $('#view-import');
     const data = ui.importData;
     if (!data) { show('add'); return; }
     const catOptions = (sel) => state.categories.map((c) => `<option value="${esc(c.id)}" ${c.id === sel ? 'selected' : ''}>${esc(c.name)}</option>`).join('');
+    const plus = (r) => (data.account === 'savings' ? r.type !== 'withdrawal' : r.type === 'income' || r.type === 'withdrawal');
     const row = (r, i) => `
       <div class="imp-row${r.checked ? '' : ' off'}" data-i="${i}">
         <input type="checkbox" class="imp-on" ${r.checked ? 'checked' : ''} aria-label="Ajouter ${esc(r.label)}">
         <span class="imp-main">
           <span class="imp-top"><span class="imp-label">${esc(r.label)}</span>
-            <span class="num${r.type === 'income' || r.type === 'withdrawal' ? ' pos' : ''}">${r.type === 'income' || r.type === 'withdrawal' ? '+' : '−'}${money(r.amount)}</span></span>
+            <span class="num${plus(r) ? ' pos' : ''}">${plus(r) ? '+' : '−'}${money(r.amount)}</span></span>
           <span class="imp-sub">${Number(r.date.slice(8))} ${esc(monthShort(r.date.slice(0, 7)))}${r.type === 'expense'
             ? ` · <select class="imp-cat" aria-label="Catégorie">${catOptions(r.categoryId)}</select>`
             : ` · ${TYPE_LABELS[r.type]}`}</span>
@@ -2318,7 +2333,7 @@
     const fresh = data.rows.map((r, i) => [r, i]).filter(([r]) => r.status === 'new');
     const skipped = data.rows.map((r, i) => [r, i]).filter(([r]) => r.status !== 'new');
     const s = (n) => (n > 1 ? 's' : '');
-    const source = { ofx: 'Relevé bancaire', csv: 'Relevé bancaire', applepay: 'Paiements Apple Pay' }[data.source];
+    const source = data.account === 'savings' ? 'Relevé de votre épargne' : { ofx: 'Relevé bancaire', csv: 'Relevé bancaire', applepay: 'Paiements Apple Pay' }[data.source];
 
     view.innerHTML = `
       <section class="block">
@@ -2326,7 +2341,9 @@
         <p class="imp-sum">${data.rows.length} opération${s(data.rows.length)} nouvelle${s(data.rows.length)}.
           ${skipped.length ? `${skipped.length} ${skipped.length > 1 ? 'semblent' : 'semble'} déjà notée${skipped.length > 1 ? 's' : ''} ou comptée${skipped.length > 1 ? 's' : ''} : elles sont décochées.` : 'Aucun doublon repéré.'}
           ${data.already ? `${plural(data.already, 'autre')} déjà importée${data.already > 1 ? 's' : ''} auparavant, ignorée${data.already > 1 ? 's' : ''}.` : ''}</p>
-        <p class="note">Vérifiez les catégories, décochez ce que vous ne voulez pas ajouter, puis validez.</p>
+        <p class="note">${data.account === 'savings'
+          ? 'Versements = argent mis de côté, retraits = argent revenu sur votre compte. Les virements déjà notés depuis le compte courant sont reconnus comme doublons. Décochez ce que vous ne voulez pas ajouter, puis validez.'
+          : 'Vérifiez les catégories, décochez ce que vous ne voulez pas ajouter, puis validez.'}</p>
       </section>
       ${fresh.length ? `
         <section class="block">
@@ -2369,7 +2386,11 @@
     $('#imp-go', view).addEventListener('click', () => {
       let added = 0;
       for (const r of data.rows) {
-        if (r.checked) {
+        if (r.checked && r.type === 'interest') {
+          state.savingsStart += r.amount; // les intérêts grossissent l’épargne sans toucher au budget du mois
+          state.seenRefs.push(r.ref);
+          added++;
+        } else if (r.checked) {
           state.transactions.push({ id: uid(), type: r.type, date: r.date, amount: r.amount, categoryId: r.type === 'expense' ? r.categoryId : null, note: r.label.slice(0, 120), ref: r.ref });
           if (r.type === 'expense' && r.categoryId) {
             for (const key of merchantKeys(r.label)) state.rules[key] = r.categoryId;
@@ -2433,7 +2454,7 @@
     $('#bank-file').addEventListener('change', (e) => {
       const file = e.target.files && e.target.files[0];
       e.target.value = '';
-      if (file) bankImportFile(file);
+      if (file) bankImportFile(file, ui.importAccount);
     });
     $('#import-file').addEventListener('change', (e) => {
       const file = e.target.files && e.target.files[0];
