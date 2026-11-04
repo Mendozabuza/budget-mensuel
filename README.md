@@ -5,11 +5,11 @@ Petite web app de budget mensuel guidée, pensée pour iPhone. HTML/CSS/JS sans 
 Une app volontairement simple : elle ne remplace pas l’app de votre banque et ne note pas chaque dépense.
 
 - **Parcours de départ en 4 étapes** : ce que vous recevez chaque mois (salaire, chômage, APL…), ce qui part tout seul (loyer, factures, abonnements, avec le jour du prélèvement), vos dépenses de tous les jours (courses, tabac, loisirs…) avec leur montant si vous le connaissez (par mois ou par semaine), sinon l’app le propose ; puis un plan proposé par l’app.
-- **Budget du mois** : chaque mois, vous vérifiez ce que vous allez recevoir (ça peut changer d’un mois à l’autre) et ce qui sera prélevé. L’app propose combien mettre sur le livret et combien prévoir pour chaque poste, selon trois plans : *Prudent*, *Équilibré* et *Effort*. Les montants sont arrondis à la dizaine ; le reste forme une marge pour les imprévus. Une case « J’ai fait le virement » pour l’épargne.
-- **Combien dépenser par jour** : vous recopiez le solde affiché par l’app de votre banque. L’app enlève les prélèvements encore à venir ce mois-ci et l’épargne pas encore virée, puis divise par le nombre de jours restants. L’argent qui n’est pas encore arrivé n’est pas compté.
+- **Budget du mois** : chaque mois, vous vérifiez ce que vous allez recevoir (ça peut changer d’un mois à l’autre) et ce qui sera prélevé. L’app propose combien mettre sur le livret et combien prévoir pour chaque poste, selon trois plans : *Prudent*, *Équilibré* et *Effort*. Les montants sont arrondis à la dizaine ; le reste forme une marge pour les imprévus. 
+- **Combien dépenser par jour** : vous recopiez le solde affiché par l’app de votre banque. L’app enlève les prélèvements encore à venir ce mois-ci et l’épargne pas encore virée, puis divise par le nombre de jours restants. Touchez une ligne quand un prélèvement ou le virement d’épargne est déjà passé : il n’est plus retiré. L’argent qui n’est pas encore arrivé n’est pas compté.
 - **Épargne** : vous recopiez de temps en temps le solde du livret ; l’app trace sa courbe.
 - **Emojis** devinés d’après le nom (🏠 loyer, ⚡ électricité, 🛒 courses…), modifiables en touchant l’emoji ; appui long sur l’emoji puis glisser pour changer l’ordre des lignes.
-- **Réglages** : rentrées et dépenses fixes habituelles, postes, devise, **Exporter / Importer** en JSON (avec rappel de sauvegarde), tout effacer.
+- **Réglages** (enregistrés automatiquement) : rentrées et dépenses fixes habituelles, postes, devise, **Exporter / Importer** en JSON (avec rappel de sauvegarde), tout effacer.
 - Fonctionne **hors ligne** une fois chargée (service worker) et s’installe sur l’écran d’accueil.
 
 ## Confidentialité
@@ -79,6 +79,7 @@ Puis ouvrir http://localhost:8000.
 - `incomes` / `fixed` : montants habituels ; `day` (1 à 31 ou `null`) : jour où la rentrée arrive ou la dépense est prélevée.
 - `categories` : `per` = `month` ou `week` quand vous connaissez le montant (`amount`), `null` pour que l’app le propose.
 - `emoji` (facultatif, sur une rentrée, dépense fixe ou poste) : emoji choisi ; `null` = deviné d’après le nom.
+- `done` : par mois, les prélèvements (id) et le virement d’épargne (`save`) indiqués comme déjà passés.
 - `months` : le budget validé de chaque mois (montants du mois, épargne prévue, budget par poste).
 - `bank` : dernier solde du compte courant recopié (peut être négatif).
 - `savings` : soldes du livret recopiés, pour la courbe.

@@ -230,6 +230,12 @@
     });
 
     const months = {};
+    const done = {};
+    if (d.done && typeof d.done === 'object') {
+      for (const [m, ids] of Object.entries(d.done)) {
+        if (isMonth(m) && Array.isArray(ids)) done[m] = [...new Set(ids.filter((x) => typeof x === 'string'))];
+      }
+    }
     if (d.months && typeof d.months === 'object') {
       for (const [m, r] of Object.entries(d.months)) {
         if (!isMonth(m) || !r || typeof r !== 'object') continue;
@@ -238,9 +244,9 @@
           fixed: cleanAmounts(r.fixed, fixed.map((x) => x.id).concat(Object.keys(r.fixed || {}))),
           plan: Object.prototype.hasOwnProperty.call(PLANS, r.plan) ? r.plan : 'equilibre',
           save: isCents(r.save) ? r.save : 0,
-          saveDone: r.saveDone === true,
           budgets: cleanAmounts(r.budgets, Object.keys(r.budgets || {})),
         };
+        if (r.saveDone === true) done[m] = [...new Set([...(done[m] || []), 'save'])]; // ancien format
       }
     }
 
@@ -257,6 +263,7 @@
       categories,
       plan: Object.prototype.hasOwnProperty.call(PLANS, d.plan) ? d.plan : 'equilibre',
       months,
+      done,
       bank: d.bank && isSignedCents(d.bank.amount) && isValidISODate(d.bank.date) ? { amount: d.bank.amount, date: d.bank.date } : null,
       savings,
       createdAt: isValidISODate(d.createdAt) ? d.createdAt : todayISO(),
@@ -292,7 +299,6 @@
         fixed: Object.fromEntries(fixed.map((r) => [r.id, amountFor(r)])),
         plan,
         save: isCents(d.savingsTarget) ? d.savingsTarget : 0,
-        saveDone: false,
         budgets: Object.fromEntries(categories.map((c) => [c.id, c.budget])),
       };
     }
@@ -382,13 +388,24 @@
     }
     const free = income - fixedTotal;
     const margin = free - saveAmount - sum([...budgets.values()], (x) => x);
-    return { month, confirmed: !!rec, incomes, fixed, income, fixedTotal, free, plan: planKey, save: saveAmount, saveDone: !!(rec && rec.saveDone), budgets, margin };
+    return { month, confirmed: !!rec, incomes, fixed, income, fixedTotal, free, plan: planKey, save: saveAmount, saveDone: isDone(month, 'save'), budgets, margin };
+  }
+
+  /** Prélèvement (ou virement d’épargne : 'save') déjà passé ce mois-ci, indiqué par vous. */
+  const isDone = (month, id) => !!(state.done[month] && state.done[month].includes(id));
+
+  function toggleDone(month, id) {
+    const list = state.done[month] || [];
+    state.done[month] = list.includes(id) ? list.filter((x) => x !== id) : list.concat(id);
+    if (!state.done[month].length) delete state.done[month];
+    save();
   }
 
   /**
    * Combien dépenser par jour, d’après le solde recopié de l’app bancaire.
    * Calcul prudent : l’argent qui n’est pas encore arrivé n’est pas compté.
-   * Une dépense fixe prélevée le jour même ou sans jour indiqué compte comme « encore à venir ».
+   * Une dépense fixe prélevée le jour même ou sans jour indiqué compte comme « encore à venir »,
+   * sauf si vous indiquez qu’elle est déjà passée.
    */
   function dailyAllowance(b) {
     const bank = state.bank;
@@ -397,7 +414,7 @@
     const daysLeft = daysInMonth(b.month) - day + 1;
     const byDay = (x, y) => (x.item.day || 99) - (y.item.day || 99);
     const toCome = b.fixed.filter((x) => x.amount > 0 && (!x.item.day || Math.min(x.item.day, daysInMonth(b.month)) >= day)).sort(byDay);
-    const fixedToCome = sum(toCome, (x) => x.amount);
+    const fixedToCome = sum(toCome.filter((x) => !isDone(b.month, x.item.id)), (x) => x.amount);
     const saveToCome = b.saveDone ? 0 : b.save;
     const left = bank.amount - fixedToCome - saveToCome;
     // Rentrées encore attendues : affichées pour information, jamais comptées.
@@ -899,7 +916,6 @@
           fixed: Object.fromEntries(d.fixed.map((i) => [i.id, i.amount])),
           plan: d.plan,
           save: d.alloc.save,
-          saveDone: false,
           budgets: Object.fromEntries(cats.map((c) => [c.id, d.alloc.budgets.get(c.id) || 0])),
         },
       },
@@ -919,7 +935,11 @@
 
   const TITLES = { savings: 'Épargne', settings: 'Réglages', edit: 'Budget du mois' };
 
+  /** Enregistre tout de suite une modification des Réglages encore en attente. */
+  let flushSettings = () => {};
+
   function show(view) {
+    flushSettings();
     ui.view = view;
     for (const v of VIEWS) $(`#view-${v}`).hidden = v !== view;
     $$('.tab').forEach((t) => t.classList.toggle('active', t.dataset.view === view || (view === 'edit' && t.dataset.view === 'month')));
@@ -957,6 +977,16 @@
   const lineHTML = (label, detail, amount, cls = '') => `
     <div class="line${cls ? ` ${cls}` : ''}"><span class="lbl">${label}${detail ? `<small>${detail}</small>` : ''}</span><span class="num">${amount}</span></div>`;
 
+  /** Ligne à cocher quand le prélèvement (ou le virement) est passé. */
+  function dueHTML(month, id, label, detail, amount, cls = '') {
+    const done = isDone(month, id);
+    return `
+      <button type="button" class="line due${cls ? ` ${cls}` : ''}${done ? ' done' : ''}" data-due="${esc(id)}" aria-pressed="${done}">
+        <span class="due-left"><span class="tick" aria-hidden="true"></span><span class="lbl"><span>${label}</span><small>${detail}</small></span></span>
+        <span class="num">−${money(amount)}</span>
+      </button>`;
+  }
+
   /** Sur votre compte → ce qui doit encore partir → combien dépenser par jour. */
   function dailyHTML(b) {
     const a = dailyAllowance(b);
@@ -983,9 +1013,11 @@
 
       <section class="block">
         <h2 class="sec">Ce qui doit encore partir</h2>
-        ${a.toCome.map((x) => lineHTML(`<span>${emo(x.item, 'fixed')} ${esc(x.item.name)}</span>`, x.item.day ? `prélevé le ${dayOf(x)}` : 'jour non indiqué : compté par prudence', `−${money(x.amount)}`)).join('')}
-        ${a.saveToCome ? lineHTML('<span><span class="emo" aria-hidden="true">🐷</span> Épargne</span>', 'à virer sur le livret', `−${money(a.saveToCome)}`) : ''}
-        ${!a.toCome.length && !a.saveToCome ? '<p class="note">Plus rien à payer d’ici la fin du mois.</p>' : ''}
+        ${a.toCome.length || b.save ? '<p class="note">Touchez une ligne quand c’est déjà passé sur votre compte : elle ne sera plus retirée.</p>' : ''}
+        ${b.save ? dueHTML(b.month, 'save', '<span class="emo" aria-hidden="true">🐷</span> Virement vers le livret', b.saveDone ? 'virement fait' : 'à faire : touchez quand c’est fait', b.save, 'save') : ''}
+        ${a.toCome.map((x) => dueHTML(b.month, x.item.id, `${emo(x.item, 'fixed')} ${esc(x.item.name)}`,
+          isDone(b.month, x.item.id) ? 'déjà passé' : x.item.day ? `prélevé le ${dayOf(x)}` : 'jour non indiqué : compté par prudence', x.amount)).join('')}
+        ${!a.toCome.length && !b.save ? '<p class="note">Plus rien à payer d’ici la fin du mois.</p>' : ''}
         ${lineHTML('Reste pour finir le mois', '', money(a.left), `total${a.left < 0 ? ' neg' : ''}`)}
       </section>
 
@@ -995,6 +1027,7 @@
         <p class="perday-sub">${a.left > 0
           ? `jusqu’au ${dim} ${esc(monthName(b.month))} (${plural(a.daysLeft, 'jour')})`
           : `Il manque ${money(-a.left)} pour payer ce qui doit encore partir.`}</p>
+        <p class="perday-why">C’est le chiffre à suivre au quotidien : il part de l’argent qui est vraiment sur votre compte. Courses, tabac, loisirs… se paient avec.</p>
       </section>
       ${a.incomesToCome.length ? `
         <p class="note">Pas encore compté, car pas encore arrivé : ${a.incomesToCome.map((x) => `${esc(emojiOf(x.item, 'income'))} ${esc(x.item.name)} +${money(x.amount)} le ${dayOf(x)}`).join(', ')}.</p>` : ''}`;
@@ -1030,13 +1063,14 @@
 
       <section class="block">
         <h2 class="sec">Budget ${esc(ofMonth(m))}${b.confirmed ? '' : ' <span class="muted">proposé</span>'}</h2>
+        <p class="note">Votre plan pour le mois : combien prévoir pour chaque chose. ${isCur ? 'Pour savoir où vous en êtes aujourd’hui, regardez le montant « par jour » plus haut.' : ''}</p>
         ${lineHTML('Vous recevez', '', `+${money(b.income)}`, 'pos-line')}
         ${lineHTML('Loyer, factures, abonnements', '', `−${money(b.fixedTotal)}`)}
         ${lineHTML('Reste à répartir', '', money(b.free), `total${b.free < 0 ? ' neg' : ''}`)}
 
         <h3 class="sub-sec">Mettre de côté</h3>
         ${lineHTML('<span><span class="emo" aria-hidden="true">🐷</span> Épargne</span>', 'virement vers le livret', money(b.save), 'save-line')}
-        ${b.confirmed && b.save ? `
+        ${isCur && b.save ? `
           <button type="button" class="save-done${b.saveDone ? ' on' : ''}" data-save-done aria-pressed="${b.saveDone}">
             <span class="box" aria-hidden="true"></span>${b.saveDone ? 'Virement fait' : 'J’ai fait le virement'}
           </button>` : ''}
@@ -1051,14 +1085,14 @@
     bindGo(view);
     $$('[data-bank]', view).forEach((el) => el.addEventListener('click', openBank));
     $$('[data-backup]', view).forEach((el) => el.addEventListener('click', exportData));
-    const done = $('[data-save-done]', view);
-    if (done) done.addEventListener('click', () => {
-      const rec = state.months[m];
-      rec.saveDone = !rec.saveDone;
-      save();
-      if (rec.saveDone) toast('Épargne du mois versée');
+    $$('[data-save-done], [data-due]', view).forEach((el) => el.addEventListener('click', () => {
+      const id = el.dataset.due || 'save';
+      toggleDone(m, id);
+      if (isDone(m, id)) toast(id === 'save' ? 'Virement d’épargne fait' : 'Noté : déjà passé');
+      const y = window.scrollY;
       renderMonth();
-    });
+      window.scrollTo(0, y);
+    }));
   }
 
   /* ---------- Budget du mois : montants reçus / prélevés, puis répartition ---------- */
@@ -1144,13 +1178,11 @@
       $('#edit-save', view).addEventListener('click', () => {
         const r = alloc.read();
         if (r.error) { $('#edit-error', view).textContent = r.error; return; }
-        const prev = state.months[m];
         state.months[m] = {
           incomes: Object.fromEntries(d.incomes),
           fixed: Object.fromEntries(d.fixed),
           plan: r.plan,
           save: r.save,
-          saveDone: !!(prev && prev.saveDone),
           budgets: Object.fromEntries(r.budgets),
         };
         state.plan = r.plan;
@@ -1423,7 +1455,7 @@
       </section>
 
       <p id="set-error" class="error" role="alert"></p>
-      <button type="button" class="btn primary" id="set-save">Enregistrer</button>
+      <p class="saved-note" id="set-saved" aria-live="polite">Les changements sont enregistrés automatiquement.</p>
 
       <section class="block" style="margin-top:40px">
         <h2 class="sec">Sauvegarde</h2>
@@ -1441,17 +1473,30 @@
       </section>`;
 
     const root = $('#view-settings');
-    const totals = () => {
+    // Chaque changement est enregistré tout seul, un court instant après la dernière frappe.
+    let timer;
+    const changed = () => {
       $('#t-income', root).textContent = money(sumEditor(root, 'income'));
       $('#t-fixed', root).textContent = money(sumEditor(root, 'fixed'));
+      clearTimeout(timer);
+      timer = setTimeout(saveSettings, 500);
     };
-    bindEditor(root, 'income', { ...o, ...DAY.income, suggestions: SUGGEST.income, placeholder: 'Nom de la rentrée' }, totals);
-    bindEditor(root, 'fixed', { ...o, ...DAY.fixed, suggestions: SUGGEST.fixed, placeholder: 'Nom de la dépense' }, totals);
-    bindEditor(root, 'cat', { ...o, noAmount: true, catAmount: true, withColor: true, suggestions: SUGGEST.cat, placeholder: 'Nom du poste' });
-    totals();
+    bindEditor(root, 'income', { ...o, ...DAY.income, suggestions: SUGGEST.income, placeholder: 'Nom de la rentrée' }, changed);
+    bindEditor(root, 'fixed', { ...o, ...DAY.fixed, suggestions: SUGGEST.fixed, placeholder: 'Nom de la dépense' }, changed);
+    bindEditor(root, 'cat', { ...o, noAmount: true, catAmount: true, withColor: true, suggestions: SUGGEST.cat, placeholder: 'Nom du poste' }, changed);
+    $('#set-currency', root).addEventListener('change', () => { saveSettings(); renderSettings(); });
+    $('#t-income', root).textContent = money(sumEditor(root, 'income'));
+    $('#t-fixed', root).textContent = money(sumEditor(root, 'fixed'));
 
-    $('#set-save', root).addEventListener('click', () => {
-      const err = (m) => { $('#set-error', root).textContent = m; };
+    flushSettings = () => { if (timer) saveSettings(); };
+
+    function saveSettings() {
+      clearTimeout(timer);
+      timer = null;
+      const err = (m) => {
+        $('#set-error', root).textContent = m;
+        $('#set-saved', root).textContent = 'Pas encore enregistré : corrigez le problème ci-dessus.';
+      };
       const ri = readEditor(root, 'income', { what: 'Ce que vous recevez' });
       if (ri.error) return err(ri.error);
       const rf = readEditor(root, 'fixed', { what: 'Ce qui part tout seul' });
@@ -1472,9 +1517,9 @@
         for (const c of state.categories) if (c.per && before.cats.get(c.id) !== catMonthly(c)) rec.budgets[c.id] = catMonthly(c);
       }
       if (!save()) return;
-      toast('Réglages enregistrés');
-      show('month');
-    });
+      $('#set-error', root).textContent = '';
+      $('#set-saved', root).textContent = 'Enregistré ✓';
+    }
 
     $('#btn-export', root).addEventListener('click', exportData);
     $('#btn-import', root).addEventListener('click', () => $('#import-file').click());
@@ -1620,6 +1665,7 @@
     // Retour sur l’app un autre jour ou un autre mois : on recalcule.
     let lastDay = todayISO();
     document.addEventListener('visibilitychange', () => {
+      if (document.visibilityState === 'hidden') flushSettings(); // app fermée juste après une modification
       if (document.visibilityState !== 'visible' || !state) return;
       const now = todayISO();
       if (now === lastDay) return;
