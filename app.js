@@ -1380,8 +1380,10 @@
   const ADD_HINTS = {
     expense: 'Courses, sorties, achats… Les dépenses fixes (loyer, abonnements) sont déjà comptées chaque mois.',
     income: 'Une rentrée exceptionnelle : prime, remboursement, vente… Le salaire et les aides sont déjà comptés chaque mois.',
-    saving: 'Argent mis de côté sur un livret ou une tirelire, ou repris de votre épargne.',
+    saving: 'Virement de votre compte courant vers votre épargne (Livret A, tirelire…).',
+    withdrawal: 'Virement de votre épargne (Livret A…) vers votre compte courant : cet argent s’ajoute à ce qu’il vous reste ce mois-ci.',
   };
+  const addHint = (kind, dir) => ADD_HINTS[kind === 'saving' && dir === 'out' ? 'withdrawal' : kind];
 
   function renderAdd() {
     const editing = ui.editingId ? state.transactions.find((t) => t.id === ui.editingId) : null;
@@ -1416,9 +1418,9 @@
       <form id="tx-form" novalidate autocomplete="off">
         ${seg('kind', [['expense', 'Dépense'], ['income', 'Rentrée'], ['saving', 'Épargne']], kind)}
         <div id="dir-wrap" ${kind === 'saving' ? '' : 'hidden'}>
-          ${seg('dir', [['in', 'Mettre de côté'], ['out', 'Retirer']], dir)}
+          ${seg('dir', [['in', 'Compte → épargne'], ['out', 'Épargne → compte']], dir)}
         </div>
-        <p class="note" id="add-hint">${ADD_HINTS[kind]}</p>
+        <p class="note" id="add-hint">${addHint(kind, dir)}</p>
 
         <label class="amount-field">
           <span class="note">Montant (${esc(currencySymbol())})</span>
@@ -1466,11 +1468,12 @@
         if (!editing) ui.addType = k;
         $('#dir-wrap').hidden = k !== 'saving';
         $('#tx-cats').hidden = k !== 'expense';
-        $('#add-hint').textContent = ADD_HINTS[k];
+        $('#add-hint').textContent = addHint(k, form.dataset.dir);
         $('#tx-note').placeholder = k === 'income' ? 'prime de fin d’année' : k === 'saving' ? 'livret' : 'marché du samedi';
       } else {
         form.dataset.dir = btn.dataset.value;
         if (!editing) ui.saveDir = btn.dataset.value;
+        $('#add-hint').textContent = addHint('saving', btn.dataset.value);
       }
     }));
 
@@ -1570,9 +1573,10 @@
         <h2 class="sec">Ce mois-ci</h2>
         <div class="line"><span>Mis de côté</span><span class="num">${money(Math.max(s.savedNet, 0))}${target ? ` <span class="muted">/ ${money(target)}</span>` : ''}</span></div>
         ${target ? bar(Math.max(s.savedNet, 0), target, 'save') : '<p class="note">Aucun objectif mensuel. Vous pouvez en fixer un dans Réglages.</p>'}
+        <p class="note">Un virement de votre livret vers votre compte ? Touchez « Reprendre ».</p>
         <div class="row-btns" style="margin-top:16px">
           <button type="button" class="btn primary" data-go="save">Mettre de côté</button>
-          <button type="button" class="btn" data-go="withdraw">Retirer</button>
+          <button type="button" class="btn" data-go="withdraw">Reprendre</button>
         </div>
       </section>
 
