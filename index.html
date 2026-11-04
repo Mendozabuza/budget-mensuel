@@ -36,13 +36,9 @@
 
     <main>
       <section id="view-month" class="view"></section>
-      <section id="view-add" class="view" hidden></section>
       <section id="view-savings" class="view" hidden></section>
-      <section id="view-history" class="view" hidden></section>
       <section id="view-settings" class="view" hidden></section>
-      <section id="view-plan" class="view" hidden></section>
-      <section id="view-import" class="view" hidden></section>
-      <section id="view-sort" class="view" hidden></section>
+      <section id="view-edit" class="view" hidden></section>
     </main>
 
     <nav class="tabbar" aria-label="Navigation">
@@ -50,17 +46,9 @@
         <svg viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="5" width="18" height="16" rx="2"/><path d="M3 10h18M8 3v4M16 3v4"/></svg>
         <span>Mois</span>
       </button>
-      <button type="button" class="tab" data-view="add">
-        <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M12 8v8M8 12h8"/></svg>
-        <span>Ajouter</span>
-      </button>
       <button type="button" class="tab" data-view="savings">
         <svg viewBox="0 0 24 24" aria-hidden="true"><ellipse cx="12" cy="6" rx="7" ry="3"/><path d="M5 6v6c0 1.7 3.1 3 7 3s7-1.3 7-3V6M5 12v6c0 1.7 3.1 3 7 3s7-1.3 7-3v-6"/></svg>
         <span>Épargne</span>
-      </button>
-      <button type="button" class="tab" data-view="history">
-        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M8 6h13M8 12h13M8 18h13M3.5 6h.01M3.5 12h.01M3.5 18h.01"/></svg>
-        <span>Historique</span>
       </button>
       <button type="button" class="tab" data-view="settings">
         <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 7h10M18 7h2M4 17h4M12 17h8"/><circle cx="16" cy="7" r="2"/><circle cx="10" cy="17" r="2"/></svg>
@@ -69,7 +57,7 @@
     </nav>
   </div>
 
-  <!-- Modifier le montant d’une rentrée / dépense fixe pour un mois, ou le solde du compte -->
+  <!-- Saisie d’un solde : compte courant ou livret -->
   <dialog id="dlg" aria-labelledby="dlg-title">
     <form id="dlg-form" method="dialog" novalidate>
       <h2 id="dlg-title"></h2>
@@ -80,14 +68,12 @@
       </label>
       <label class="dlg-neg" id="dlg-neg-wrap" hidden><input type="checkbox" id="dlg-neg"> Mon compte est à découvert (montant négatif)</label>
       <p id="dlg-error" class="error" role="alert"></p>
-      <button type="submit" class="btn primary" value="month" id="dlg-month"></button>
-      <button type="submit" class="btn" value="always" id="dlg-always"></button>
+      <button type="submit" class="btn primary" value="save">Enregistrer</button>
       <button type="submit" class="btn ghost" value="cancel">Annuler</button>
     </form>
   </dialog>
 
   <input type="file" id="import-file" accept="application/json,.json" hidden>
-  <input type="file" id="bank-file" hidden>
   <div id="toast" class="toast" role="status" aria-live="polite"></div>
 
   <script src="app.js"></script>

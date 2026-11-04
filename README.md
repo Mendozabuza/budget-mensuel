@@ -2,16 +2,13 @@
 
 Petite web app de budget mensuel guidée, pensée pour iPhone. HTML/CSS/JS sans framework, sans serveur, sans dépendance.
 
-- **Parcours de départ en 4 étapes** : ce qui rentre chaque mois (salaire, APL, prime d’activité…), ce qui sort chaque mois (loyer, factures, abonnements…), les catégories du quotidien (courses, loisirs…), puis un plan proposé par l’app.
-- **Répartir mon mois** : l’app propose combien mettre de côté et combien prévoir pour chaque catégorie, selon trois plans : *Prudent* (risque faible de finir le mois à court, gros coussin), *Équilibré* et *Effort* (risque modéré, on épargne davantage). Les montants proposés sont arrondis à la dizaine ; le reste forme un coussin pour les imprévus. Après quelques mois, les budgets suivent les dépenses réelles. Une nouvelle proposition est faite chaque mois. L’app ne conseille pas de placement.
-- **Rentrées et dépenses fixes comptées automatiquement** chaque mois. Leur montant peut être ajusté pour un mois seulement (ex. : APL qui varie) ou pour tous les mois suivants.
-- **Mois** : ce que vous pouvez encore dépenser jusqu’à la fin du mois, un repère « environ X par jour », le détail rentrées / fixes / quotidien / épargne, l’argent sur le compte (à partir du solde indiqué, mis à jour avec les opérations notées et les prélèvements datés), les prélèvements et rentrées encore à venir (si leur jour est indiqué), l’avancement de chaque budget et des conseils (budget dépassé, dépenses trop rapides, objectif d’épargne…).
-- **Graphiques** (dessinés par l’app, sans bibliothèque, fonctionnent hors ligne) : où va l’argent du mois, rythme des dépenses face au budget, avancement de chaque catégorie (dans sa couleur), rentrées et dépenses des 6 derniers mois, évolution de l’épargne.
-- **Importer des opérations** : relevé bancaire (OFX ou CSV, par exemple Crédit Agricole ou Caisse d’Épargne) ou journal des paiements Apple Pay écrit par un raccourci iOS (`date;montant;commerçant` par ligne). L’app propose une catégorie quand elle reconnaît le commerçant, sinon la dépense reste « à classer » (et retient vos corrections), écarte les doublons (déjà notés, déjà comptés dans les rentrées ou dépenses fixes, déjà importés) et vous laisse tout vérifier avant d’ajouter. Le relevé d’un livret d’épargne s’importe aussi (onglet Épargne) : versements = mis de côté, retraits = argent revenu sur le compte, intérêts ajoutés au total d’épargne. Le fichier est lu sur l’appareil, rien n’est envoyé.
-- **Ajouter** : dépense du quotidien, rentrée ponctuelle (prime, remboursement…) ou épargne (mettre de côté / retirer).
-- **Épargne** : total épargné et sa courbe d’évolution, objectif du mois, historique mois par mois avec l’argent non dépensé.
-- **Historique** : opérations notées du mois, séparées entre « Compte courant » et « Épargne » ; toucher une ligne pour la modifier. **Trier par commerçant** range d’un coup toutes les dépenses d’un commerçant dans une catégorie.
-- **Réglages** : tout modifier, **Exporter / Importer** en JSON, tout effacer. L’app indique la date de la dernière sauvegarde et rappelle d’en faire une (une semaine après la première opération, puis tous les 30 jours).
+Une app volontairement simple : elle ne remplace pas l’app de votre banque et ne note pas chaque dépense.
+
+- **Parcours de départ en 4 étapes** : ce que vous recevez chaque mois (salaire, chômage, APL…), ce qui part tout seul (loyer, factures, abonnements, avec le jour du prélèvement), vos postes de dépenses (courses, loisirs…), puis un plan proposé par l’app.
+- **Budget du mois** : chaque mois, vous vérifiez ce que vous allez recevoir (ça peut changer d’un mois à l’autre) et ce qui sera prélevé. L’app propose combien mettre sur le livret et combien prévoir pour chaque poste, selon trois plans : *Prudent*, *Équilibré* et *Effort*. Les montants sont arrondis à la dizaine ; le reste forme une marge pour les imprévus. Une case « J’ai fait le virement » pour l’épargne.
+- **Combien dépenser par jour** : vous recopiez le solde affiché par l’app de votre banque. L’app enlève les prélèvements encore à venir ce mois-ci et l’épargne pas encore virée, puis divise par le nombre de jours restants. L’argent qui n’est pas encore arrivé n’est pas compté.
+- **Épargne** : vous recopiez de temps en temps le solde du livret ; l’app trace sa courbe.
+- **Réglages** : rentrées et dépenses fixes habituelles, postes, devise, **Exporter / Importer** en JSON (avec rappel de sauvegarde), tout effacer.
 - Fonctionne **hors ligne** une fois chargée (service worker) et s’installe sur l’écran d’accueil.
 
 ## Confidentialité
@@ -51,40 +48,35 @@ Puis ouvrir http://localhost:8000.
 {
   "app": "budget-mensuel",
   "exportedAt": "2026-01-31T18:00:00.000Z",
-  "version": 2,
+  "version": 3,
   "currency": "EUR",
-  "savingsTarget": 5000,
-  "savingsStart": 0,
-  "incomes": [
-    { "id": "i1", "name": "Salaire", "amount": 150000, "from": "2026-01", "until": null, "day": 28 }
-  ],
-  "fixed": [
-    { "id": "f1", "name": "Loyer", "amount": 60000, "from": "2026-01", "until": null, "day": 5 }
-  ],
-  "categories": [
-    { "id": "c1", "name": "Courses", "budget": 30000, "color": "#2f855a" }
-  ],
-  "overrides": { "2026-02": { "i1": 145000 } },
+  "incomes": [{ "id": "i1", "name": "Salaire", "amount": 150000, "day": 28 }],
+  "fixed": [{ "id": "f1", "name": "Loyer", "amount": 60000, "day": 5 }],
+  "categories": [{ "id": "c1", "name": "Courses", "color": "#2f855a" }],
   "plan": "equilibre",
-  "planMonth": "2026-01",
-  "transactions": [
-    { "id": "t1", "type": "expense", "date": "2026-01-12", "amount": 2450, "categoryId": "c1", "note": "Exemple" },
-    { "id": "t2", "type": "income", "date": "2026-01-20", "amount": 10000, "categoryId": null, "note": "" },
-    { "id": "t3", "type": "saving", "date": "2026-01-25", "amount": 5000, "categoryId": null, "note": "" }
-  ]
+  "months": {
+    "2026-01": {
+      "incomes": { "i1": 145000 },
+      "fixed": { "f1": 60000 },
+      "plan": "equilibre",
+      "save": 15000,
+      "saveDone": false,
+      "budgets": { "c1": 30000 }
+    }
+  },
+  "bank": { "amount": 84050, "date": "2026-01-12" },
+  "savings": [{ "date": "2026-01-01", "amount": 120000 }],
+  "createdAt": "2026-01-01",
+  "lastBackup": null
 }
 ```
 
 - Montants en **centimes** (`2450` = 24,50 €).
-- `incomes` / `fixed` : comptés chaque mois de `from` à `until` (inclus, `null` = sans fin).
-- `day` (facultatif, 1 à 31 ou `null`) : jour où la rentrée arrive ou la dépense est prélevée ; sert à la liste « À venir ce mois-ci ».
-- `ref` (facultatif, sur une opération) : empreinte de l’opération importée ; `seenRefs` : opérations importées puis écartées ; `rules` : catégorie retenue par commerçant.
-- `bank` (facultatif) : dernier solde du compte indiqué, `{ "amount": centimes (peut être négatif), "date": "AAAA-MM-JJ" }`.
-- `lastBackup` : jour de la dernière sauvegarde exportée (ou `null`).
-- `plan` : dernier plan choisi (`prudent`, `equilibre` ou `effort`) ; `planMonth` : mois où il a été appliqué.
-- `overrides` : montant d’une rentrée ou dépense fixe pour un mois précis.
-- `type` d’opération : `expense` (dépense du quotidien), `income` (rentrée ponctuelle), `saving` (mise de côté), `withdrawal` (retrait d’épargne).
-- Les fichiers de la version 1 s’importent aussi.
+- `incomes` / `fixed` : montants habituels ; `day` (1 à 31 ou `null`) : jour où la rentrée arrive ou la dépense est prélevée.
+- `months` : le budget validé de chaque mois (montants du mois, épargne prévue, budget par poste).
+- `bank` : dernier solde du compte courant recopié (peut être négatif).
+- `savings` : soldes du livret recopiés, pour la courbe.
+- Les fichiers des versions 1 et 2 s’importent aussi : rentrées, dépenses fixes, postes, budget du mois en cours et total d’épargne sont repris ; le détail des dépenses ne l’est pas. Au premier lancement de la version 3, l’ancienne copie est gardée dans le `localStorage` sous `budget-mensuel:avant-v3`.
 
 L’import vérifie la structure du fichier et remplace les données présentes sur l’appareil après confirmation.
 
