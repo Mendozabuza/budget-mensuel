@@ -508,12 +508,12 @@
     if (!p.inc) msg = '<p class="msg">Ajoutez vos rentrées pour savoir si votre plan tient.</p>';
     else if (margin > 0) msg = `<p class="msg ok">Votre plan tient : il reste <b>${money(margin)}</b> de marge chaque mois, en plus de vos budgets.</p>`;
     else if (margin === 0) msg = '<p class="msg ok">Votre plan est à l’équilibre : tout votre argent a une place.</p>';
-    else msg = `<p class="msg warn">Votre plan dépasse vos rentrées de <b>${money(-margin)}</b> par mois. Réduisez un budget du quotidien ou l’objectif d’épargne.</p>`;
+    else msg = `<p class="msg warn">Votre plan dépasse vos rentrées de <b>${money(-margin)}</b> par mois. Réduisez un budget ou l’épargne.</p>`;
     return `
       <div class="lines">
         <div class="line"><span>Rentrées</span><span class="num">+${money(p.inc)}</span></div>
         <div class="line"><span>Dépenses fixes</span><span class="num">−${money(p.fix)}</span></div>
-        <div class="line"><span>Budget du quotidien</span><span class="num">−${money(p.varp)}</span></div>
+        <div class="line"><span>Vos budgets</span><span class="num">−${money(p.varp)}</span></div>
         <div class="line"><span>Épargne</span><span class="num">−${money(p.save)}</span></div>
         <div class="line total"><span>Marge</span><span class="num${margin < 0 ? ' neg' : ''}">${money(margin)}</span></div>
       </div>
@@ -524,9 +524,9 @@
 
   // Le « risque », c’est celui de finir le mois à court : plus on épargne, plus le coussin est mince.
   const PLANS = {
-    prudent: { label: 'Prudent', save: 0.05, cushion: 0.15, text: 'Risque faible de finir le mois à court : on épargne peu et on garde un gros coussin pour les imprévus.' },
+    prudent: { label: 'Prudent', save: 0.05, cushion: 0.15, text: 'Peu de risque de finir le mois à court : on épargne un peu et on garde une grosse marge pour les imprévus.' },
     equilibre: { label: 'Équilibré', save: 0.10, cushion: 0.10, text: 'Un juste milieu entre mettre de côté et garder de la marge.' },
-    effort: { label: 'Effort', save: 0.20, cushion: 0.05, text: 'Risque modéré : on épargne beaucoup et le coussin est plus mince. À éviter si vos dépenses varient beaucoup d’un mois à l’autre.' },
+    effort: { label: 'Effort', save: 0.20, cushion: 0.05, text: 'On épargne beaucoup, mais la marge pour les imprévus est petite. À éviter si vos dépenses changent beaucoup d’un mois à l’autre.' },
   };
 
   /** Arrondi à la dizaine inférieure (montants en centimes). */
@@ -612,12 +612,12 @@
         <div class="alloc-rows">
           ${ctx.cats.length ? `
             <h3 class="alloc-sec">Ce que vous pouvez dépenser</h3>
-            <p class="note">Le budget conseillé pour chaque catégorie du quotidien, pour tout le mois.</p>` : ''}
+            <p class="note">Le budget conseillé pour chaque catégorie, pour tout le mois.</p>` : ''}
           ${ctx.cats.map((c) => `
             <label class="alloc-row"><span class="alloc-name"><span><span class="dot" style="background:${esc(c.color)}"></span> ${esc(c.name)}</span><small data-week></small>${avgNote(c)}</span>${field(`data-alloc="cat" data-id="${esc(c.id)}"`, values.budgets.get(c.id) || 0, c.name)}</label>`).join('')}
           <h3 class="alloc-sec">Ce que vous mettez de côté</h3>
           <label class="alloc-row"><span class="alloc-name">Épargne<small>à mettre de côté en début de mois</small></span>${field('data-alloc="save"', values.save, 'Épargne')}</label>
-          <div class="alloc-row cushion"><span class="alloc-name">Coussin imprévus<small>ce qui reste, centimes compris</small></span><span class="num" data-cushion></span></div>
+          <div class="alloc-row cushion"><span class="alloc-name">Marge pour les imprévus<small>ce qui n’est pas réparti</small></span><span class="num" data-cushion></span></div>
         </div>
         <p class="msg warn" data-alloc-warn hidden></p>
       </div>`;
@@ -765,7 +765,7 @@
         <ol class="howto">
           <li><b>Ce qui rentre</b> : salaire, aides…</li>
           <li><b>Ce qui sort chaque mois</b> : loyer, factures, abonnements…</li>
-          <li><b>Le quotidien</b> : courses, loisirs…</li>
+          <li><b>Vos dépenses de tous les jours</b> : courses, loisirs…</li>
           <li><b>Votre plan</b> : l’app vous propose combien prévoir pour les courses, les loisirs… et combien mettre de côté</li>
         </ol>
         <label class="field"><span>Devise</span><select id="d-currency">${currencyOptions(d.currency)}</select></label>`;
@@ -781,7 +781,7 @@
       body = `${editorHTML('fixed', d.fixed, { ...o, ...DAY.fixed, placeholder: 'Nom de la dépense' })}
         <p class="live" id="live"></p>`;
     } else if (s === 3) {
-      title = 'Votre budget du quotidien';
+      title = 'Vos dépenses de tous les jours';
       intro = 'Ce que vous dépensez différemment chaque mois. Cochez ce qui vous concerne : les montants vous seront proposés à l’étape suivante.';
       body = `${editorHTML('cat', d.categories, { ...o, toggle: true, noAmount: true })}
         <p class="live" id="live"></p>`;
@@ -870,7 +870,7 @@
       d[ui.step === 1 ? 'incomes' : 'fixed'] = r.items.map(({ id, name, amount, day }) => ({ id, name, amount, day }));
     } else if (ui.step === 3) {
       d.alloc = null;
-      const r = readEditor(root, 'cat', { toggle: true, min: 1, what: 'Budget du quotidien' });
+      const r = readEditor(root, 'cat', { toggle: true, min: 1, what: 'Vos budgets' });
       if (r.error) return r.error;
       d.categories = $$('[data-editor="cat"] .erow', root)
         .map((row, i) => ({
@@ -971,10 +971,10 @@
     const base = Math.max(s.incomeTotal, out);
     if (!base) return '';
     const parts = [
-      ['fixed', 'Fixes', s.fixedTotal],
-      ['var', 'Quotidien', s.varSpent],
+      ['fixed', 'Loyer et factures', s.fixedTotal],
+      ['var', 'Dépensé', s.varSpent],
       ['save', 'Épargne', save],
-      ['left', 'Reste', Math.max(s.incomeTotal - out, 0)],
+      ['left', 'Encore à dépenser', Math.max(s.incomeTotal - out, 0)],
     ].filter((p) => p[2] > 0);
     const pct = (v) => Math.round((v / base) * 100);
     const over = s.incomeTotal > 0 && out > s.incomeTotal;
@@ -1015,7 +1015,7 @@
     const labelRight = lastDay < dim * 0.65;
 
     return `
-      <svg class="chart-svg" viewBox="0 0 ${W} ${H}" role="img" aria-label="Dépenses du quotidien cumulées : ${esc(money(acc))} au jour ${lastDay}, pour un budget de ${esc(money(planned))}">
+      <svg class="chart-svg" viewBox="0 0 ${W} ${H}" role="img" aria-label="Dépenses cumulées : ${esc(money(acc))} au jour ${lastDay}, pour un budget de ${esc(money(planned))}">
         <line class="ch-axis" x1="${L}" y1="${fx(y(0))}" x2="${W - R}" y2="${fx(y(0))}"/>
         <line class="ch-budget" x1="${L}" y1="${fx(y(planned))}" x2="${W - R}" y2="${fx(y(planned))}"/>
         <text x="${W - R}" y="${fx(y(planned) - 5)}" text-anchor="end">budget ${esc(roundMoney(planned))}</text>
@@ -1026,9 +1026,9 @@
         <text x="${L}" y="${H - 4}">1</text>
         <text x="${W - R}" y="${H - 4}" text-anchor="end">${dim}</text>
       </svg>
-      <div class="legend"><span><i class="k-ink${over ? ' over' : ''}"></i>Dépensé</span><span><i class="k-dash"></i>Rythme prévu</span></div>
+      <div class="legend"><span><i class="k-ink${over ? ' over' : ''}"></i>Dépensé</span><span><i class="k-dash"></i>Rythme normal</span></div>
       <p class="note">${month === cm
-        ? `Au ${lastDay} ${monthName(month)}, vous avez dépensé ${money(acc)} au quotidien ; le rythme prévu était d’environ ${money(expected)}.`
+        ? `Au ${lastDay} ${monthName(month)}, vous avez dépensé ${money(acc)}. Pour tenir vos budgets, il faudrait en être à environ ${money(expected)}.`
         : `Total du mois : ${money(acc)} pour un budget de ${money(planned)}.`}</p>`;
   }
 
@@ -1113,7 +1113,7 @@
     if (!state.incomes.some((i) => isActive(i, month)) && month >= cm) {
       out.push({ kind: '', text: 'Ajoutez vos rentrées d’argent (salaire, aides…) pour voir ce qu’il vous reste.', action: 'settings', label: 'Ajouter' });
     } else if (s.margin < 0) {
-      out.push({ kind: 'warn', text: `Vos dépenses prévues (fixes, quotidien et épargne) dépassent vos rentrées de ${money(-s.margin)} par mois.`, action: 'settings', label: 'Ajuster' });
+      out.push({ kind: 'warn', text: `Loyer, factures, budgets et épargne dépassent ce que vous recevez de ${money(-s.margin)} par mois.`, action: 'settings', label: 'Ajuster' });
     }
     const over = state.categories.filter((c) => (s.spentBy.get(c.id) || 0) > c.budget);
     if (over.length === 1) {
@@ -1127,7 +1127,7 @@
       const expected = Math.round(s.varPlanned * day / daysInMonth(month));
       // Pas avant le 7 : en début de mois, un seul passage en caisse fausse le rythme.
       if (day >= 7 && s.varSpent > expected * 1.1 && day < daysInMonth(month)) {
-        out.push({ kind: '', text: `Vous dépensez un peu plus vite que prévu : ${money(s.varSpent)} dépensés au quotidien, environ ${money(expected)} prévus à cette date.` });
+        out.push({ kind: '', text: `Vous dépensez un peu vite : ${money(s.varSpent)} déjà dépensés, alors qu’environ ${money(expected)} suffiraient à cette date pour tenir vos budgets.` });
       }
     }
     if (isCur && state.savingsTarget > 0) {
@@ -1210,14 +1210,21 @@
     const s = summary(m);
     const isCur = m === cm;
 
-    let sub;
-    if (isCur) {
+    const lastDayName = `${daysInMonth(m)} ${monthName(m)}`;
+    let eyebrow, sub;
+    if (s.remaining < 0) {
+      eyebrow = m > cm ? 'Il vous manquera' : 'Vous dépassez de';
+      sub = 'Vos dépenses sont plus grandes que l’argent que vous recevez ce mois-ci.';
+    } else if (isCur) {
       const daysLeft = daysInMonth(m) - new Date().getDate() + 1;
-      sub = s.remaining > 0
-        ? `soit environ <b>${money(Math.floor(s.remaining / daysLeft))}</b> par jour pendant ${plural(daysLeft, 'jour')}`
-        : 'Vos dépenses dépassent vos rentrées ce mois-ci.';
+      eyebrow = 'Vous pouvez encore dépenser';
+      sub = `d’ici le ${lastDayName}, soit environ <b>${money(Math.floor(s.remaining / daysLeft))}</b> par jour. Le loyer et les factures du mois sont déjà comptés.`;
+    } else if (m < cm) {
+      eyebrow = 'Argent non dépensé';
+      sub = `en ${monthName(m)}, une fois tout payé.`;
     } else {
-      sub = m < cm ? 'en fin de mois' : 'prévu, avant les dépenses du quotidien';
+      eyebrow = 'Vous pourrez dépenser';
+      sub = `en ${monthName(m)}, une fois loyer et factures payés.`;
     }
 
     const recLines = (list, kind) => list.length
@@ -1256,9 +1263,7 @@
 
     $('#view-month').innerHTML = `
       <section class="hero">
-        <p class="eyebrow">${isCur
-          ? (s.remaining >= 0 ? 'Il vous restera en fin de mois' : 'Dépassement prévu en fin de mois')
-          : (s.remaining >= 0 ? 'Il vous reste' : 'Dépassement')}</p>
+        <p class="eyebrow">${eyebrow}</p>
         <p class="big num${s.remaining < 0 ? ' neg' : ''}">${money(Math.abs(s.remaining))}</p>
         <p class="sub">${sub}</p>
       </section>
@@ -1291,12 +1296,12 @@
         </div>`).join('')}
 
       <section class="block">
-        <h2 class="sec">Ce mois-ci</h2>
+        <h2 class="sec">Le calcul</h2>
         <details class="flow">
           <summary><span>Rentrées</span><span class="num pos">+${money(s.incomeTotal)}</span></summary>
           <div class="sub-lines">
             ${recLines(s.incomes, 'income')}
-            ${s.extraIncome ? `<div class="line"><span>Rentrées ponctuelles</span><span class="num">${money(s.extraIncome)}</span></div>` : ''}
+            ${s.extraIncome ? `<div class="line"><span>Argent reçu en plus</span><span class="num">${money(s.extraIncome)}</span></div>` : ''}
             ${s.incomes.length ? '<p class="note">Touchez une ligne pour changer son montant ce mois-ci.</p>' : ''}
           </div>
         </details>
@@ -1307,13 +1312,13 @@
             ${s.fixed.length ? '<p class="note">Touchez une ligne pour changer son montant ce mois-ci.</p>' : ''}
           </div>
         </details>
-        <div class="line flowrow"><span>Dépenses du quotidien</span><span class="num">−${money(s.varSpent)}</span></div>
+        <div class="line flowrow"><span>Déjà dépensé</span><span class="num">−${money(s.varSpent)}</span></div>
         ${s.savedNet ? `<div class="line flowrow"><span>Épargne</span><span class="num">${s.savedNet > 0 ? '−' : '+'}${money(Math.abs(s.savedNet))}</span></div>` : ''}
-        <div class="line total"><span>${isCur ? 'Il restera' : 'Il reste'}</span><span class="num${s.remaining < 0 ? ' neg' : ''}">${money(s.remaining)}</span></div>
+        <div class="line total"><span>${isCur ? 'Encore à dépenser' : m < cm ? 'Non dépensé' : 'À dépenser'}</span><span class="num${s.remaining < 0 ? ' neg' : ''}">${money(s.remaining)}</span></div>
       </section>
 
       <section class="block">
-        <h2 class="sec">Budget du quotidien <span class="muted">${money(s.varSpent)} / ${money(s.varPlanned)}</span></h2>
+        <h2 class="sec">Vos budgets <span class="muted">${money(s.varSpent)} / ${money(s.varPlanned)}</span></h2>
         ${catLines.join('')}
         ${isCur ? `
           <div class="tip plan-cta">
@@ -1326,7 +1331,7 @@
 
       ${pace ? `
         <section class="block">
-          <h2 class="sec">Suis-je dans les clous ?</h2>
+          <h2 class="sec">Est-ce que je dépense trop vite ?</h2>
           ${pace}
         </section>` : ''}
 
@@ -1740,8 +1745,8 @@
           <div class="line"><span>Mis de côté</span><span class="num pos">+${money(savedIn)}</span></div>
           ${savedOut ? `<div class="line"><span>Repris vers le compte</span><span class="num">−${money(savedOut)}</span></div>` : ''}
           <p class="note">Les mouvements de votre épargne (Livret A…) ce mois-ci, vus depuis le livret.</p>` : `
-          <div class="line"><span>Dépenses du quotidien</span><span class="num">−${money(s.varSpent)}</span></div>
-          ${s.extraIncome ? `<div class="line"><span>Rentrées ponctuelles</span><span class="num">+${money(s.extraIncome)}</span></div>` : ''}
+          <div class="line"><span>Dépenses</span><span class="num">−${money(s.varSpent)}</span></div>
+          ${s.extraIncome ? `<div class="line"><span>Argent reçu en plus</span><span class="num">+${money(s.extraIncome)}</span></div>` : ''}
           <p class="note">Les rentrées et dépenses fixes sont comptées automatiquement : voir l’onglet Mois.</p>
           ${all.some((t) => t.type === 'expense') ? '<button type="button" class="link" data-go="sort">Ranger les dépenses par commerçant</button>' : ''}`}
       </section>`;
@@ -1814,7 +1819,7 @@
         ${editorHTML('fixed', active(state.fixed), { ...o, ...DAY.fixed, placeholder: 'Nom de la dépense' })}
       </section>
       <section class="block">
-        <h2 class="sec">Budget du quotidien <span class="muted" id="t-cat"></span></h2>
+        <h2 class="sec">Vos budgets <span class="muted" id="t-cat"></span></h2>
         ${editorHTML('cat', state.categories, { ...o, placeholder: 'Nom de la catégorie' })}
       </section>
       <section class="block">
@@ -1897,7 +1902,7 @@
       const err = $('#set-error', root);
       const ri = readEditor(root, 'income', { what: 'Rentrées' });
       const rf = readEditor(root, 'fixed', { what: 'Dépenses fixes' });
-      const rc = readEditor(root, 'cat', { min: 1, what: 'Budget du quotidien' });
+      const rc = readEditor(root, 'cat', { min: 1, what: 'Vos budgets' });
       const firstError = [ri, rf, rc].find((r) => r.error);
       if (firstError) { err.textContent = firstError.error; return; }
       const target = readMoneyInput($('#set-target', root));
