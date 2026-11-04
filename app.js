@@ -26,7 +26,7 @@
     cat: ['Courses', 'Carburant', 'Restaurants', 'Loisirs', 'Santé', 'Vêtements', 'Enfants', 'Animaux', 'Cadeaux', 'Divers'],
   };
   const DEFAULT_CATS = ['Courses', 'Loisirs', 'Divers'];
-  const VIEWS = ['month', 'add', 'savings', 'history', 'settings', 'plan', 'import'];
+  const VIEWS = ['month', 'add', 'savings', 'history', 'settings', 'plan', 'import', 'sort'];
 
   const $ = (sel, root = document) => root.querySelector(sel);
   const $$ = (sel, root = document) => Array.from(root.querySelectorAll(sel));
@@ -924,7 +924,7 @@
 
   /* ---------- Navigation ---------- */
 
-  const TITLES = { add: 'Nouvelle opération', savings: 'Épargne', settings: 'Réglages', plan: 'Répartir mon mois', import: 'Importer' };
+  const TITLES = { add: 'Nouvelle opération', savings: 'Épargne', settings: 'Réglages', plan: 'Répartir mon mois', import: 'Importer', sort: 'Trier par commerçant' };
 
   function show(view) {
     ui.view = view;
@@ -948,7 +948,7 @@
     const hasNav = ui.view === 'month' || ui.view === 'history';
     $('.topbar').classList.toggle('no-nav', !hasNav);
     $('#title').textContent = hasNav ? monthLabel(ui.month) : (ui.editingId ? 'Modifier' : TITLES[ui.view]);
-    ({ month: renderMonth, add: renderAdd, savings: renderSavings, history: renderHistory, settings: renderSettings, plan: renderPlan, import: renderImport })[ui.view]();
+    ({ month: renderMonth, add: renderAdd, savings: renderSavings, history: renderHistory, settings: renderSettings, plan: renderPlan, import: renderImport, sort: renderSort })[ui.view]();
   }
 
   /* ---------- Graphiques (SVG/HTML dessinés ici, sans bibliothèque : fonctionnent hors ligne) ---------- */
@@ -1244,7 +1244,11 @@
     let orphan = 0;
     for (const [id, amount] of s.spentBy) if (!categoryById(id)) orphan += amount;
     if (orphan) {
-      catLines.push(`<div class="cat"><div class="cat-top"><span class="name"><span class="dot"></span>Sans catégorie</span><span class="num">${money(orphan)}</span></div></div>`);
+      catLines.push(`
+        <div class="cat">
+          <div class="cat-top"><span class="name"><span class="dot"></span>À classer</span><span class="num">${money(orphan)}</span></div>
+          <button type="button" class="link inline" data-go="sort">Classer ces dépenses</button>
+        </div>`);
     }
 
     const tipList = tips(s, m);
@@ -1264,6 +1268,15 @@
       ${isCur ? bankHTML() : ''}
 
       ${isCur ? backupTipHTML() : ''}
+
+      ${(() => {
+        const n = s.tx.filter((t) => t.type === 'expense' && !categoryById(t.categoryId)).length;
+        return n ? `
+          <div class="tip warn">
+            <p>${plural(n, 'dépense')} à classer ce mois-ci.</p>
+            <button type="button" class="link inline" data-go="sort">Classer</button>
+          </div>` : '';
+      })()}
 
       ${isCur && state.planMonth !== cm && state.categories.length ? `
         <div class="tip plan-tip">
@@ -1299,14 +1312,6 @@
         <div class="line total"><span>${isCur ? 'Il restera' : 'Il reste'}</span><span class="num${s.remaining < 0 ? ' neg' : ''}">${money(s.remaining)}</span></div>
       </section>
 
-      ${upcomingHTML(s, m)}
-
-      ${pace ? `
-        <section class="block">
-          <h2 class="sec">Suis-je dans les clous ?</h2>
-          ${pace}
-        </section>` : ''}
-
       <section class="block">
         <h2 class="sec">Budget du quotidien <span class="muted">${money(s.varSpent)} / ${money(s.varPlanned)}</span></h2>
         ${catLines.join('')}
@@ -1316,6 +1321,15 @@
             <button type="button" class="link inline" data-go="plan">Voir</button>
           </div>` : ''}
       </section>
+
+      ${upcomingHTML(s, m)}
+
+      ${pace ? `
+        <section class="block">
+          <h2 class="sec">Suis-je dans les clous ?</h2>
+          ${pace}
+        </section>` : ''}
+
 
       <section class="block">
         <h2 class="sec">Vos derniers mois</h2>
@@ -1728,13 +1742,17 @@
           <p class="note">Les mouvements de votre épargne (Livret A…) ce mois-ci, vus depuis le livret.</p>` : `
           <div class="line"><span>Dépenses du quotidien</span><span class="num">−${money(s.varSpent)}</span></div>
           ${s.extraIncome ? `<div class="line"><span>Rentrées ponctuelles</span><span class="num">+${money(s.extraIncome)}</span></div>` : ''}
-          <p class="note">Les rentrées et dépenses fixes sont comptées automatiquement : voir l’onglet Mois.</p>`}
+          <p class="note">Les rentrées et dépenses fixes sont comptées automatiquement : voir l’onglet Mois.</p>
+          ${all.some((t) => t.type === 'expense') ? '<button type="button" class="link" data-go="sort">Ranger les dépenses par commerçant</button>' : ''}`}
       </section>`;
 
-    const bindTabs = () => $$('[data-seg="history"] button', $('#view-history')).forEach((b) => b.addEventListener('click', () => {
-      ui.historyTab = b.dataset.value;
-      renderHistory();
-    }));
+    const bindTabs = () => {
+      $$('[data-seg="history"] button', $('#view-history')).forEach((b) => b.addEventListener('click', () => {
+        ui.historyTab = b.dataset.value;
+        renderHistory();
+      }));
+      bindGo($('#view-history'));
+    };
 
     if (!tx.length) {
       $('#view-history').innerHTML = `${head}<p class="empty">${onSavings ? 'Aucun mouvement d’épargne ce mois-ci.' : 'Aucune opération notée ce mois-ci.'}</p>`;
@@ -1751,7 +1769,7 @@
 
     const rowHTMLTx = (t) => {
       const cat = t.type === 'expense' ? categoryById(t.categoryId) : null;
-      const label = { income: 'Rentrée', saving: 'Mis de côté', withdrawal: 'Repris vers le compte' }[t.type] || (cat ? cat.name : 'Sans catégorie');
+      const label = { income: 'Rentrée', saving: 'Mis de côté', withdrawal: 'Repris vers le compte' }[t.type] || (cat ? cat.name : 'À classer');
       const sign = t.type === 'income' || t.type === 'saving' ? '+' : '−'; // l’épargne est vue depuis le livret
       const cls = t.type === 'income' || t.type === 'saving' ? ' pos' : '';
       return `
@@ -1759,7 +1777,7 @@
           <span class="dot" style="background:${esc(cat ? cat.color : 'var(--muted)')}"></span>
           <span class="info">
             <span class="t">${esc(t.note || label)}</span>
-            ${t.note ? `<span class="n">${esc(label)}</span>` : ''}
+            ${t.note ? `<span class="n${t.type === 'expense' && !cat ? ' todo' : ''}">${esc(label)}</span>` : ''}
           </span>
           <span class="num amt${cls}">${sign}${money(t.amount)}</span>
         </button>`;
@@ -1865,7 +1883,7 @@
       onDelete: (row) => {
         const used = state.transactions.some((t) => t.categoryId === row.dataset.id);
         const name = $('.e-name', row).value.trim() || 'cette catégorie';
-        return !used || confirm(`« ${name} » contient des dépenses. Elles resteront dans l’historique en « Sans catégorie ». Retirer ?`);
+        return !used || confirm(`« ${name} » contient des dépenses. Elles resteront dans l’historique, « à classer ». Retirer ?`);
       },
     }, refresh);
     $('#set-target', root).addEventListener('input', refresh);
@@ -2190,10 +2208,11 @@
     [/\b(loisir|culture|sport|divertis)/, /cinema|ugc|pathe|gaumont|fnac|cultura|spotify|netflix|deezer|disney|steam|playstation|nintendo|decathlon|intersport|basic ?fit|fitness|musee|concert|ticketmaster/],
     [/\b(sante|pharma|medic|soin)/, /pharmacie|docteur|medecin|dentiste|opticien|laboratoire|doctolib|hopital/],
     [/\b(vetement|habill|shopping)/, /zara|h ?& ?m|kiabi|uniqlo|primark|celio|jules|vinted|zalando|shein|asos/],
-    [/\b(maison|bricol|equipement)/, /ikea|leroy merlin|castorama|conforama|darty|boulanger|maisons du monde/],
+    [/\b(maison|logement|entretien|menage|bricol|equipement)/, /ikea|leroy merlin|castorama|conforama|darty|boulanger|maisons du monde|laverie|lavomatic|pressing|blanchisserie/],
     [/\banima/, /maxi zoo|animalis|veterinaire|zooplus/],
   ];
 
+  /** Catégorie devinée, ou null (« À classer ») : mieux vaut ne rien deviner que se tromper. */
   function guessCategory(rawLabel, label) {
     for (const key of merchantKeys(label)) {
       const learned = state.rules[key];
@@ -2205,8 +2224,7 @@
       const cat = state.categories.find((c) => catRe.test(strip(c.name)));
       if (cat) return cat.id;
     }
-    const other = state.categories.find((c) => /divers|autre/.test(strip(c.name)));
-    return (other || state.categories[0] || {}).id || null;
+    return null;
   }
 
   const SAVING_RE = /livret|\bldds?\b|\blep\b|\bpel\b|\bcel\b|epargne|assurance vie/;
@@ -2337,7 +2355,7 @@
     const view = $('#view-import');
     const data = ui.importData;
     if (!data) { show('add'); return; }
-    const catOptions = (sel) => state.categories.map((c) => `<option value="${esc(c.id)}" ${c.id === sel ? 'selected' : ''}>${esc(c.name)}</option>`).join('');
+    const catOptions = (sel) => `<option value="" ${sel ? '' : 'selected'}>À classer</option>` + state.categories.map((c) => `<option value="${esc(c.id)}" ${c.id === sel ? 'selected' : ''}>${esc(c.name)}</option>`).join('');
     const plus = (r) => (data.account === 'savings' ? r.type !== 'withdrawal' : r.type === 'income' || r.type === 'withdrawal');
     const row = (r, i) => `
       <div class="imp-row${r.checked ? '' : ' off'}" data-i="${i}">
@@ -2391,7 +2409,7 @@
       if (!el) return;
       const r = data.rows[Number(el.dataset.i)];
       if (e.target.classList.contains('imp-on')) { r.checked = e.target.checked; el.classList.toggle('off', !r.checked); }
-      if (e.target.classList.contains('imp-cat')) r.categoryId = e.target.value;
+      if (e.target.classList.contains('imp-cat')) { r.categoryId = e.target.value || null; r.picked = true; }
       count();
     });
     // Toucher le nom de l’opération coche / décoche la ligne (la liste de catégories reste à part).
@@ -2413,9 +2431,7 @@
           added++;
         } else if (r.checked) {
           state.transactions.push({ id: uid(), type: r.type, date: r.date, amount: r.amount, categoryId: r.type === 'expense' ? r.categoryId : null, note: r.label.slice(0, 120), ref: r.ref });
-          if (r.type === 'expense' && r.categoryId) {
-            for (const key of merchantKeys(r.label)) state.rules[key] = r.categoryId;
-          }
+          if (r.type === 'expense' && r.picked) learnCategory(r.label, r.categoryId);
           added++;
         } else {
           state.seenRefs.push(r.ref); // écartée : ne sera pas reproposée au prochain import
@@ -2428,6 +2444,81 @@
       show('history');
     });
     $('#imp-cancel', view).addEventListener('click', () => { ui.importData = null; show('add'); });
+  }
+
+  /** Retient la catégorie d’un commerçant pour les prochains imports (null : oublie). */
+  function learnCategory(label, categoryId) {
+    for (const key of merchantKeys(label)) {
+      if (categoryId) state.rules[key] = categoryId;
+      else delete state.rules[key];
+    }
+  }
+
+  /** Dépenses regroupées par commerçant, sur tous les mois : on range tout un commerçant d’un coup. */
+  function merchantGroups() {
+    const groups = new Map();
+    for (const t of state.transactions) {
+      if (t.type !== 'expense') continue;
+      const key = merchantKeys(t.note || '')[0] || '';
+      if (!key) continue;
+      const g = groups.get(key) || { key, names: new Map(), tx: [], total: 0 };
+      g.names.set(t.note, (g.names.get(t.note) || 0) + 1);
+      g.tx.push(t);
+      g.total += t.amount;
+      groups.set(key, g);
+    }
+    return [...groups.values()].map((g) => {
+      const cats = new Set(g.tx.map((t) => (categoryById(t.categoryId) ? t.categoryId : '')));
+      return {
+        ...g,
+        name: [...g.names].sort((a, b) => b[1] - a[1])[0][0],
+        cat: cats.size === 1 ? [...cats][0] : 'mixed',
+      };
+    });
+  }
+
+  function renderSort() {
+    const view = $('#view-sort');
+    const groups = merchantGroups();
+    const todo = groups.filter((g) => g.cat === '' || g.cat === 'mixed').sort((a, b) => b.tx.length - a.tx.length);
+    const done = groups.filter((g) => g.cat !== '' && g.cat !== 'mixed').sort((a, b) => b.tx.length - a.tx.length || a.name.localeCompare(b.name, 'fr'));
+    const options = (sel) => `
+      ${sel === 'mixed' ? '<option value="mixed" selected disabled>Plusieurs catégories</option>' : ''}
+      <option value="" ${sel === '' ? 'selected' : ''}>À classer</option>
+      ${state.categories.map((c) => `<option value="${esc(c.id)}" ${c.id === sel ? 'selected' : ''}>${esc(c.name)}</option>`).join('')}`;
+    const row = (g) => `
+      <div class="sort-row" data-key="${esc(g.key)}">
+        <span class="sort-name">${esc(g.name)}<small>${plural(g.tx.length, 'dépense')} · ${money(g.total)}</small></span>
+        <select class="sort-cat" aria-label="Catégorie de ${esc(g.name)}">${options(g.cat)}</select>
+      </div>`;
+    view.innerHTML = `
+      <section class="block">
+        <p class="note">Choisissez une catégorie pour un commerçant : toutes ses dépenses, passées et futures, y seront rangées.</p>
+      </section>
+      ${todo.length ? `
+        <section class="block">
+          <h2 class="sec">À classer (${todo.length})</h2>
+          <div class="sort-list">${todo.map(row).join('')}</div>
+        </section>` : ''}
+      ${done.length ? `
+        <section class="block">
+          <h2 class="sec">Déjà classés (${done.length})</h2>
+          <div class="sort-list">${done.map(row).join('')}</div>
+        </section>` : ''}
+      ${state.categories.length ? '' : '<p class="note">Ajoutez d’abord des catégories dans Réglages.</p>'}
+      <button type="button" class="btn ghost" data-go="history">Terminé</button>`;
+
+    view.onchange = (e) => {
+      if (!e.target.classList.contains('sort-cat')) return;
+      const g = groups.find((x) => x.key === e.target.closest('.sort-row').dataset.key);
+      const id = e.target.value || null;
+      for (const t of g.tx) t.categoryId = id;
+      learnCategory(g.name, id);
+      if (!save()) return;
+      toast(id ? `${g.name} → ${categoryById(id).name}` : `${g.name} : à classer`);
+      renderSort();
+    };
+    bindGo(view);
   }
 
   /* ---------- Démarrage ---------- */

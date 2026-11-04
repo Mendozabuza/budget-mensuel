@@ -409,14 +409,14 @@ legend { font-size: 14px; color: var(--muted); margin-bottom: 10px; padding: 0; 
 
 /* ---------- Historique / épargne ---------- */
 
-.day { font-size: 13px; font-weight: 600; color: var(--muted); margin: 24px 0 0; padding-bottom: 6px; border-bottom: 1px solid var(--text); }
+.day { font-size: 13px; font-weight: 600; color: var(--muted); margin: 18px 0 0; padding-bottom: 4px; }
 .tx-row {
   display: flex;
   align-items: center;
   gap: 12px;
   width: 100%;
-  min-height: 56px;
-  padding: 10px 0;
+  min-height: 50px;
+  padding: 7px 0;
   border: 0;
   border-bottom: 1px solid var(--line);
   background: none;
@@ -426,6 +426,8 @@ legend { font-size: 14px; color: var(--muted); margin-bottom: 10px; padding: 0; 
 .tx-row .info { flex: 1; min-width: 0; display: flex; flex-direction: column; }
 .tx-row .t, .tx-row .n { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .tx-row .n { font-size: 13px; color: var(--muted); }
+.tx-row .n.todo { color: var(--warn, #b7791f); font-weight: 600; }
+.tx-list .tx-row:last-child { border-bottom: 0; }
 .tx-row .amt { font-weight: 500; }
 
 .month-row .num { display: flex; flex-direction: column; align-items: flex-end; }
@@ -573,3 +575,9 @@ body { overflow-x: clip; } /* les glissements ne créent pas de défilement hori
 @keyframes fade-out { to { opacity: 0; } }
 @keyframes grow-x { from { transform: scaleX(0); } }
 @keyframes grow-y { from { transform: scaleY(0); } }
+
+/* Trier par commerçant */
+.sort-row { display: flex; align-items: center; justify-content: space-between; gap: 12px; min-height: 60px; border-bottom: 1px solid var(--line); }
+.sort-name { display: flex; flex-direction: column; min-width: 0; line-height: 1.25; overflow-wrap: anywhere; }
+.sort-name small { font-size: 13px; color: var(--muted); }
+.sort-cat { flex: none; max-width: 48%; padding: 8px 10px; border: 0; border-radius: 8px; background: var(--soft); color: var(--text); font: inherit; font-size: 15px; }
