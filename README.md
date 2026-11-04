@@ -8,6 +8,7 @@ Une app volontairement simple : elle ne remplace pas l’app de votre banque et 
 - **Budget du mois** : chaque mois, vous vérifiez ce que vous allez recevoir (ça peut changer d’un mois à l’autre) et ce qui sera prélevé. L’app propose combien mettre sur le livret et combien prévoir pour chaque poste, selon trois plans : *Prudent*, *Équilibré* et *Effort*. Les montants sont arrondis à la dizaine ; le reste forme une marge pour les imprévus. Une case « J’ai fait le virement » pour l’épargne.
 - **Combien dépenser par jour** : vous recopiez le solde affiché par l’app de votre banque. L’app enlève les prélèvements encore à venir ce mois-ci et l’épargne pas encore virée, puis divise par le nombre de jours restants. L’argent qui n’est pas encore arrivé n’est pas compté.
 - **Épargne** : vous recopiez de temps en temps le solde du livret ; l’app trace sa courbe.
+- **Emojis** devinés d’après le nom (🏠 loyer, ⚡ électricité, 🛒 courses…), modifiables en touchant l’emoji ; appui long sur l’emoji puis glisser pour changer l’ordre des lignes.
 - **Réglages** : rentrées et dépenses fixes habituelles, postes, devise, **Exporter / Importer** en JSON (avec rappel de sauvegarde), tout effacer.
 - Fonctionne **hors ligne** une fois chargée (service worker) et s’installe sur l’écran d’accueil.
 
@@ -50,7 +51,7 @@ Puis ouvrir http://localhost:8000.
   "exportedAt": "2026-01-31T18:00:00.000Z",
   "version": 3,
   "currency": "EUR",
-  "incomes": [{ "id": "i1", "name": "Salaire", "amount": 150000, "day": 28 }],
+  "incomes": [{ "id": "i1", "name": "Salaire", "amount": 150000, "day": 28, "emoji": null }],
   "fixed": [{ "id": "f1", "name": "Loyer", "amount": 60000, "day": 5 }],
   "categories": [
     { "id": "c1", "name": "Courses", "color": "#2f855a", "per": "week", "amount": 4000 },
@@ -77,6 +78,7 @@ Puis ouvrir http://localhost:8000.
 - Montants en **centimes** (`2450` = 24,50 €).
 - `incomes` / `fixed` : montants habituels ; `day` (1 à 31 ou `null`) : jour où la rentrée arrive ou la dépense est prélevée.
 - `categories` : `per` = `month` ou `week` quand vous connaissez le montant (`amount`), `null` pour que l’app le propose.
+- `emoji` (facultatif, sur une rentrée, dépense fixe ou poste) : emoji choisi ; `null` = deviné d’après le nom.
 - `months` : le budget validé de chaque mois (montants du mois, épargne prévue, budget par poste).
 - `bank` : dernier solde du compte courant recopié (peut être négatif).
 - `savings` : soldes du livret recopiés, pour la courbe.

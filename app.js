@@ -26,6 +26,28 @@
     cat: ['Courses', 'Tabac', 'Carburant', 'Restaurants', 'Loisirs', 'Santé', 'Vêtements', 'Enfants', 'Animaux', 'Cadeaux', 'Divers'],
   };
   const DEFAULT_CATS = ['Courses', 'Loisirs', 'Divers'];
+
+  /* Emojis : devinés d’après le nom (le premier qui correspond), modifiables en touchant l’emoji. */
+  const EMOJI_RULES = [
+    [/assurance/i, '🛡️'], [/loyer|logement/i, '🏠'], [/[ée]lectricit|\bedf\b/i, '⚡'], [/\bgaz\b/i, '🔥'], [/\beau\b/i, '💧'],
+    [/internet|\bbox\b|wifi|fibre/i, '🌐'], [/t[ée]l[ée]phone|mobile|forfait/i, '📱'], [/mutuelle|sant[ée]|m[ée]decin/i, '🩺'],
+    [/pharmac/i, '💊'], [/transport|navigo|\bbus\b|train|m[ée]tro/i, '🚆'], [/streaming|netflix|spotify|disney|canal/i, '📺'],
+    [/sport|salle/i, '🏋️'], [/cr[ée]dit|pr[êe]t\b|banc|banque/i, '🏦'], [/imp[ôo]t|taxe/i, '🧾'], [/caf[ée]/i, '☕'],
+    [/salaire|paie/i, '💼'], [/ch[ôo]mage|france travail|p[ôo]le emploi/i, '🏛️'], [/\bapl\b|\bcaf\b/i, '🏠'], [/prime/i, '⭐'],
+    [/familial|enfant|cr[èe]che/i, '👶'], [/pension/i, '🤝'], [/retraite/i, '🧓'], [/bourse|[ée]cole|[ée]tude/i, '🎓'],
+    [/course|supermarch|aliment/i, '🛒'], [/tabac|cigarette|clope/i, '🚬'], [/carburant|essence|gasoil/i, '⛽'],
+    [/restau|resto/i, '🍽️'], [/loisir|sortie/i, '🎉'], [/v[êe]tement|habit/i, '👕'], [/animau|\bchats?\b|\bchiens?\b/i, '🐾'],
+    [/cadeau/i, '🎁'], [/laverie|pressing/i, '🧺'], [/voiture|\bauto\b/i, '🚗'], [/coiff/i, '💇'], [/divers/i, '📦'],
+  ];
+  const DEFAULT_EMOJI = { income: '💶', fixed: '💸', cat: '🛍️' };
+  const EMOJI_CHOICES = ['💼', '🏛️', '💶', '⭐', '🤝', '🎓', '🏠', '⚡', '🔥', '💧', '🌐', '📱', '🛡️', '🩺', '💊', '🚆', '🚗', '⛽',
+    '📺', '🏋️', '🏦', '🧾', '💸', '💳', '🛒', '🚬', '🍽️', '☕', '🍺', '🎉', '🎬', '🎮', '👕', '👶', '🐾', '🎁', '🧺', '💇',
+    '✈️', '📚', '🔧', '📦', '🛍️', '💰'];
+
+  const guessEmoji = (name) => (EMOJI_RULES.find(([re]) => re.test(name || '')) || [])[1];
+  /** L’emoji choisi, sinon celui deviné d’après le nom, sinon celui par défaut. */
+  const emojiOf = (item, kind) => item.emoji || guessEmoji(item.name) || DEFAULT_EMOJI[kind];
+  const emo = (item, kind) => `<span class="emo" aria-hidden="true">${esc(emojiOf(item, kind))}</span>`;
   const VIEWS = ['month', 'savings', 'settings', 'edit'];
 
   const $ = (sel, root = document) => root.querySelector(sel);
@@ -177,6 +199,7 @@
   const isSignedCents = (n) => Number.isInteger(n) && Math.abs(n) < 1e11;
   const cleanName = (s) => (typeof s === 'string' ? s.trim().slice(0, 40) : '') || 'Sans nom';
   const cleanDay = (d) => (Number.isInteger(d) && d >= 1 && d <= 31 ? d : null);
+  const cleanEmoji = (e) => (typeof e === 'string' && e.trim() && e.length <= 16 ? e.trim() : null);
 
   /** Garde les montants d’un mois qui correspondent à une ligne connue. */
   function cleanAmounts(o, ids) {
@@ -194,7 +217,7 @@
       if (!Array.isArray(list)) throw new Error(`le champ « ${label} » doit être une liste.`);
       return list.map((r, i) => {
         if (!r || typeof r.id !== 'string' || !isCents(r.amount)) throw new Error(`${label} n°${i + 1} invalide.`);
-        return { id: r.id, name: cleanName(r.name), amount: r.amount, day: cleanDay(r.day) };
+        return { id: r.id, name: cleanName(r.name), amount: r.amount, day: cleanDay(r.day), emoji: cleanEmoji(r.emoji) };
       });
     };
     const incomes = recurring(d.incomes, 'incomes');
@@ -203,7 +226,7 @@
     const categories = d.categories.map((c, i) => {
       if (!c || typeof c.id !== 'string') throw new Error(`catégorie n°${i + 1} invalide.`);
       const per = ['month', 'week'].includes(c.per) && isCents(c.amount) ? c.per : null;
-      return { id: c.id, name: cleanName(c.name), color: /^#[0-9a-f]{6}$/i.test(c.color) ? c.color : PALETTE[i % PALETTE.length], per, amount: per ? c.amount : null };
+      return { id: c.id, name: cleanName(c.name), color: /^#[0-9a-f]{6}$/i.test(c.color) ? c.color : PALETTE[i % PALETTE.length], per, amount: per ? c.amount : null, emoji: cleanEmoji(c.emoji) };
     });
 
     const months = {};
@@ -372,12 +395,13 @@
     if (!bank || bank.date.slice(0, 7) !== b.month) return null;
     const day = Number(bank.date.slice(8));
     const daysLeft = daysInMonth(b.month) - day + 1;
-    const toCome = b.fixed.filter((x) => x.amount > 0 && (!x.item.day || Math.min(x.item.day, daysInMonth(b.month)) >= day));
+    const byDay = (x, y) => (x.item.day || 99) - (y.item.day || 99);
+    const toCome = b.fixed.filter((x) => x.amount > 0 && (!x.item.day || Math.min(x.item.day, daysInMonth(b.month)) >= day)).sort(byDay);
     const fixedToCome = sum(toCome, (x) => x.amount);
     const saveToCome = b.saveDone ? 0 : b.save;
     const left = bank.amount - fixedToCome - saveToCome;
     // Rentrées encore attendues : affichées pour information, jamais comptées.
-    const incomesToCome = b.incomes.filter((x) => x.amount > 0 && x.item.day && Math.min(x.item.day, daysInMonth(b.month)) > day);
+    const incomesToCome = b.incomes.filter((x) => x.amount > 0 && x.item.day && Math.min(x.item.day, daysInMonth(b.month)) > day).sort(byDay);
     return { bank, day, daysLeft, toCome, fixedToCome, saveToCome, incomesToCome, left, perDay: left > 0 ? Math.floor(left / daysLeft) : 0 };
   }
 
@@ -442,10 +466,10 @@
         <p class="note plan-text">${esc(PLANS[planKey].text)}</p>
         <div class="alloc-rows">
           <h3 class="alloc-sec">Mettre de côté</h3>
-          <label class="alloc-row"><span class="alloc-name">Épargne<small>virement vers le livret</small></span>${field('data-alloc="save"', values.save, 'Épargne')}</label>
+          <label class="alloc-row"><span class="alloc-name"><span><span class="emo" aria-hidden="true">🐷</span> Épargne</span><small>virement vers le livret</small></span>${field('data-alloc="save"', values.save, 'Épargne')}</label>
           ${ctx.cats.length ? '<h3 class="alloc-sec">Dépenses de tous les jours</h3>' : ''}
           ${ctx.cats.map((c) => `
-            <label class="alloc-row"><span class="alloc-name"><span><span class="dot" style="background:${esc(c.color)}"></span> ${esc(c.name)}</span>${c.per ? `<small>vous avez indiqué ${esc(knownLabel(c))}</small>` : '<small data-week></small>'}</span>${field(`data-alloc="cat" data-id="${esc(c.id)}"`, values.budgets.get(c.id) || 0, c.name)}</label>`).join('')}
+            <label class="alloc-row"><span class="alloc-name"><span>${emo(c, 'cat')} ${esc(c.name)}</span>${c.per ? `<small>vous avez indiqué ${esc(knownLabel(c))}</small>` : '<small data-week></small>'}</span>${field(`data-alloc="cat" data-id="${esc(c.id)}"`, values.budgets.get(c.id) || 0, c.name)}</label>`).join('')}
           <div class="alloc-row cushion"><span class="alloc-name">Marge pour les imprévus<small>ce qui n’est pas réparti</small></span><span class="num" data-cushion></span></div>
         </div>
         <p class="msg warn" data-alloc-warn hidden></p>
@@ -507,7 +531,7 @@
   /** Jour du mois où une rentrée arrive / une dépense est prélevée. */
   const DAY = { income: { dayLabel: 'Arrive' }, fixed: { dayLabel: 'Prélevé' } };
 
-  function rowHTML(item, o) {
+  function rowHTML(item, o, key) {
     const amount = item.amount ?? 0;
     const nameInput = `<input class="e-name" value="${esc(item.name)}" placeholder="${esc(o.placeholder || 'Nom')}" maxlength="40" autocomplete="off" aria-label="Nom">`;
     const per = item.per || 'auto';
@@ -521,17 +545,18 @@
             <span class="money"${per === 'auto' ? ' hidden' : ''}><input class="e-cat-amt" inputmode="decimal" placeholder="0" value="${per === 'auto' ? '' : centsToInput(item.amount)}" autocomplete="off" aria-label="Montant"><span class="cur">${esc(currencySymbol(o.currency))}</span></span>
           </div>` : '';
     return `
-      <div class="erow${o.toggle && !item.on ? ' off' : ''}" data-id="${esc(item.id)}"${item.color ? ` data-color="${esc(item.color)}"` : ''}>
+      <div class="erow${o.toggle && !item.on ? ' off' : ''}" data-id="${esc(item.id)}"${item.color ? ` data-color="${esc(item.color)}"` : ''}${item.emoji ? ` data-emoji="${esc(item.emoji)}"` : ''}>
         ${o.toggle ? `<input type="checkbox" class="e-on" ${item.on ? 'checked' : ''} aria-label="Utiliser ${esc(item.name)}">` : ''}
+        <button type="button" class="e-emo" aria-label="Changer l’emoji (appui long : déplacer)">${esc(emojiOf(item, key))}</button>
         ${o.dayLabel ? `<div class="e-main">${nameInput}
-          <label class="e-day">${o.dayLabel} le <input class="e-day-in" inputmode="numeric" pattern="[0-9]*" maxlength="2" placeholder="…" value="${item.day ?? ''}" autocomplete="off" aria-label="Jour du mois"> du mois</label></div>` : o.catAmount ? `<div class="e-main">${nameInput}${catLine}</div>` : nameInput}
+          <label class="e-day">${o.dayLabel} le <input class="e-day-in" inputmode="numeric" pattern="[0-9]*" maxlength="2" placeholder="…" value="${item.day ?? ''}" autocomplete="off" aria-label="Jour du mois"></label></div>` : o.catAmount ? `<div class="e-main">${nameInput}${catLine}</div>` : nameInput}
         ${o.noAmount ? '' : `<span class="money"><input class="e-amount" inputmode="decimal" placeholder="0" value="${centsToInput(amount)}" autocomplete="off" aria-label="Montant par mois"><span class="cur">${esc(currencySymbol(o.currency))}</span></span>`}
         ${o.toggle ? '' : '<button type="button" class="e-del" aria-label="Retirer cette ligne"><svg viewBox="0 0 24 24"><path d="M6 6l12 12M18 6L6 18"/></svg></button>'}
       </div>`;
   }
 
   function editorHTML(key, items, o) {
-    return `<div class="editor" data-editor="${key}">${items.map((i) => rowHTML(i, o)).join('')}</div>
+    return `<div class="editor" data-editor="${key}">${items.map((i) => rowHTML(i, o, key)).join('')}</div>
       <div class="suggest" data-suggest="${key}"></div>`;
   }
 
@@ -551,13 +576,16 @@
       if (!b) return;
       const name = b.dataset.name;
       const color = o.withColor ? PALETTE[$$('.erow', box).length % PALETTE.length] : undefined;
-      box.insertAdjacentHTML('beforeend', rowHTML({ id: uid(), name, amount: 0, on: true, color }, o));
+      box.insertAdjacentHTML('beforeend', rowHTML({ id: uid(), name, amount: 0, on: true, color }, o, key));
       const row = box.lastElementChild;
-      ((name && $('.e-amount', row)) || $('.e-name', row)).focus();
+      if (name) ($('.e-amount', row) || $('.e-name', row)).focus();
+      else openEmoji(row, key, () => { $('.e-name', row).focus(); onChange(); }); // « Autre » : on choisit d’abord l’emoji
       refresh();
       onChange();
     });
     box.addEventListener('click', (e) => {
+      const emoBtn = e.target.closest('.e-emo');
+      if (emoBtn && !dragged) { openEmoji(emoBtn.closest('.erow'), key, onChange); return; }
       const del = e.target.closest('.e-del');
       if (!del) return;
       del.closest('.erow').remove();
@@ -574,7 +602,50 @@
       if (e.target.classList.contains('e-name')) refresh();
       onChange();
     });
-    box.addEventListener('input', onChange);
+    box.addEventListener('input', (e) => {
+      const row = e.target.closest('.erow');
+      // Tant qu’aucun emoji n’a été choisi, il suit le nom (« Électricité » → ⚡).
+      if (e.target.classList.contains('e-name') && !row.dataset.emoji) $('.e-emo', row).textContent = emojiOf({ name: e.target.value }, key);
+      onChange();
+    });
+
+    // Appui long sur une ligne (ailleurs que dans un champ), puis glisser : change l’ordre.
+    let press = null, drag = null, dragged = false;
+    const cancelPress = () => { if (press) clearTimeout(press.timer); press = null; };
+    box.addEventListener('pointerdown', (e) => {
+      dragged = false;
+      const row = e.target.closest('.erow');
+      if (!row || e.button > 0 || e.target.closest('input, select, .e-del')) return;
+      const id = e.pointerId;
+      press = {
+        x: e.clientX,
+        y: e.clientY,
+        timer: setTimeout(() => {
+          press = null;
+          drag = row;
+          row.classList.add('dragging');
+          try { box.setPointerCapture(id); } catch { /* pointeur déjà relâché */ }
+        }, 350),
+      };
+    });
+    box.addEventListener('pointermove', (e) => {
+      if (press && Math.hypot(e.clientX - press.x, e.clientY - press.y) > 8) cancelPress();
+      if (!drag) return;
+      const next = $$('.erow', box).find((r) => r !== drag && e.clientY < r.getBoundingClientRect().top + r.offsetHeight / 2);
+      if (next ? drag.nextElementSibling !== next : box.lastElementChild !== drag) box.insertBefore(drag, next || null);
+    });
+    const drop = () => {
+      cancelPress();
+      if (!drag) return;
+      drag.classList.remove('dragging');
+      drag = null;
+      dragged = true; // pas d’ouverture du choix d’emoji au relâchement
+      onChange();
+    };
+    box.addEventListener('pointerup', drop);
+    box.addEventListener('pointercancel', drop);
+    box.addEventListener('touchmove', (e) => { if (drag) e.preventDefault(); }, { passive: false }); // pas de défilement pendant le déplacement
+    box.addEventListener('contextmenu', (e) => { if (e.target.closest('.e-emo')) e.preventDefault(); });
     refresh();
   }
 
@@ -595,7 +666,7 @@
       const rawDay = dayEl ? dayEl.value.trim() : '';
       const day = rawDay ? Number(rawDay) : null;
       if (rawDay && !(Number.isInteger(day) && day >= 1 && day <= 31)) return { error: `Jour invalide pour « ${name} » : mettez un nombre entre 1 et 31.` };
-      const item = { id: row.dataset.id, name: name.slice(0, 40), amount, day, color: row.dataset.color };
+      const item = { id: row.dataset.id, name: name.slice(0, 40), amount, day, color: row.dataset.color, emoji: row.dataset.emoji || null };
       const perEl = $('.e-per', row);
       if (perEl) {
         item.per = perEl.value === 'auto' ? null : perEl.value;
@@ -782,7 +853,7 @@
       const key = ui.step === 1 ? 'income' : 'fixed';
       const r = readEditor(root, key, { what: ui.step === 1 ? 'Ce que vous recevez' : 'Ce qui part tout seul' });
       if (r.error) return r.error;
-      d[ui.step === 1 ? 'incomes' : 'fixed'] = r.items.map(({ id, name, amount, day }) => ({ id, name, amount, day }));
+      d[ui.step === 1 ? 'incomes' : 'fixed'] = r.items.map(({ id, name, amount, day, emoji }) => ({ id, name, amount, day, emoji }));
     } else if (ui.step === 3) {
       d.alloc = null;
       const r = readEditor(root, 'cat', { toggle: true, min: 1, what: 'Vos dépenses de tous les jours' });
@@ -794,6 +865,7 @@
           name: $('.e-name', row).value.trim().slice(0, 40),
           color: row.dataset.color || PALETTE[i % PALETTE.length],
           on: $('.e-on', row).checked,
+          emoji: row.dataset.emoji || null,
           per: picked.has(row.dataset.id) ? picked.get(row.dataset.id).per : null,
           amount: picked.has(row.dataset.id) ? picked.get(row.dataset.id).amount : null,
         }))
@@ -813,7 +885,7 @@
   function finishSetup() {
     const d = ui.draft;
     const cm = currentMonth();
-    const cats = d.categories.filter((c) => c.on).map(({ id, name, color, per, amount }) => ({ id, name, color, per, amount }));
+    const cats = d.categories.filter((c) => c.on).map(({ id, name, color, per, amount, emoji }) => ({ id, name, color, per, amount, emoji }));
     state = validate({
       version: SCHEMA_VERSION,
       currency: d.currency,
@@ -911,8 +983,8 @@
 
       <section class="block">
         <h2 class="sec">Ce qui doit encore partir</h2>
-        ${a.toCome.map((x) => lineHTML(esc(x.item.name), x.item.day ? `prélevé le ${dayOf(x)}` : 'jour non indiqué : compté par prudence', `−${money(x.amount)}`)).join('')}
-        ${a.saveToCome ? lineHTML('Épargne', 'à virer sur le livret', `−${money(a.saveToCome)}`) : ''}
+        ${a.toCome.map((x) => lineHTML(`<span>${emo(x.item, 'fixed')} ${esc(x.item.name)}</span>`, x.item.day ? `prélevé le ${dayOf(x)}` : 'jour non indiqué : compté par prudence', `−${money(x.amount)}`)).join('')}
+        ${a.saveToCome ? lineHTML('<span><span class="emo" aria-hidden="true">🐷</span> Épargne</span>', 'à virer sur le livret', `−${money(a.saveToCome)}`) : ''}
         ${!a.toCome.length && !a.saveToCome ? '<p class="note">Plus rien à payer d’ici la fin du mois.</p>' : ''}
         ${lineHTML('Reste pour finir le mois', '', money(a.left), `total${a.left < 0 ? ' neg' : ''}`)}
       </section>
@@ -925,7 +997,7 @@
           : `Il manque ${money(-a.left)} pour payer ce qui doit encore partir.`}</p>
       </section>
       ${a.incomesToCome.length ? `
-        <p class="note">Pas encore compté, car pas encore arrivé : ${a.incomesToCome.map((x) => `${esc(x.item.name)} +${money(x.amount)} le ${dayOf(x)}`).join(', ')}.</p>` : ''}`;
+        <p class="note">Pas encore compté, car pas encore arrivé : ${a.incomesToCome.map((x) => `${esc(emojiOf(x.item, 'income'))} ${esc(x.item.name)} +${money(x.amount)} le ${dayOf(x)}`).join(', ')}.</p>` : ''}`;
   }
 
   function renderMonth() {
@@ -942,7 +1014,7 @@
     const cats = state.categories.map((c) => {
       const amount = b.budgets.get(c.id) || 0;
       const detail = c.per === 'week' ? esc(knownLabel(c)) : c.per || !amount ? '' : `environ ${roundMoney(amount * 12 / 52)} par semaine`;
-      return lineHTML(`<span><span class="dot" style="background:${esc(c.color)}"></span> ${esc(c.name)}</span>`, detail, money(amount));
+      return lineHTML(`<span>${emo(c, 'cat')} ${esc(c.name)}</span>`, detail, money(amount));
     }).join('');
 
     $('#view-month').innerHTML = `
@@ -963,7 +1035,7 @@
         ${lineHTML('Reste à répartir', '', money(b.free), `total${b.free < 0 ? ' neg' : ''}`)}
 
         <h3 class="sub-sec">Mettre de côté</h3>
-        ${lineHTML('Épargne', 'virement vers le livret', money(b.save), 'save-line')}
+        ${lineHTML('<span><span class="emo" aria-hidden="true">🐷</span> Épargne</span>', 'virement vers le livret', money(b.save), 'save-line')}
         ${b.confirmed && b.save ? `
           <button type="button" class="save-done${b.saveDone ? ' on' : ''}" data-save-done aria-pressed="${b.saveDone}">
             <span class="box" aria-hidden="true"></span>${b.saveDone ? 'Virement fait' : 'J’ai fait le virement'}
@@ -1005,7 +1077,7 @@
     }
     const d = ui.editDraft;
     const field = (kind, item) => `
-      <label class="alloc-row"><span class="alloc-name">${esc(item.name)}${item.day ? `<small>${kind === 'income' ? 'arrive' : 'prélevé'} le ${item.day}</small>` : ''}</span>
+      <label class="alloc-row"><span class="alloc-name"><span>${emo(item, kind === 'income' ? 'income' : 'fixed')} ${esc(item.name)}</span>${item.day ? `<small>${kind === 'income' ? 'arrive' : 'prélevé'} le ${item.day}</small>` : ''}</span>
         <span class="money"><input data-kind="${kind}" data-id="${esc(item.id)}" inputmode="decimal" placeholder="0" value="${centsToInput(d[kind === 'income' ? 'incomes' : 'fixed'].get(item.id) || 0)}" autocomplete="off" aria-label="${esc(item.name)}"><span class="cur">${esc(currencySymbol())}</span></span></label>`;
 
     if (ui.editStep === 1) {
@@ -1228,9 +1300,54 @@
     });
   }
 
+  /* ---------- Choix d’un emoji ---------- */
+
+  let emoPick = null;
+
+  /** Ouvre le choix d’emoji pour une ligne d’éditeur ; `done` est appelé après un choix. */
+  function openEmoji(row, kind, done) {
+    const dlg = $('#emo');
+    const apply = (value) => {
+      if (value) row.dataset.emoji = value; else delete row.dataset.emoji;
+      $('.e-emo', row).textContent = emojiOf({ emoji: value, name: $('.e-name', row).value }, kind);
+      closeDialog(dlg);
+      done();
+    };
+    if (typeof dlg.showModal !== 'function') {
+      const v = prompt('Emoji (laisser vide pour automatique)', row.dataset.emoji || '');
+      if (v !== null) apply(firstGrapheme(v));
+      return;
+    }
+    emoPick = apply;
+    const current = $('.e-emo', row).textContent;
+    $('#emo-grid').innerHTML = EMOJI_CHOICES.map((e) => `<button type="button" data-e="${esc(e)}" class="${e === current ? 'on' : ''}">${e}</button>`).join('');
+    $('#emo-input').value = '';
+    dlg.showModal();
+  }
+
+  function firstGrapheme(v) {
+    const t = String(v).trim();
+    if (!t) return null;
+    if (window.Intl && Intl.Segmenter) return [...new Intl.Segmenter('fr', { granularity: 'grapheme' }).segment(t)][0].segment;
+    return Array.from(t)[0];
+  }
+
+  function bindEmoji() {
+    const dlg = $('#emo');
+    $('#emo-grid').addEventListener('click', (e) => {
+      const b = e.target.closest('[data-e]');
+      if (b && emoPick) emoPick(b.dataset.e);
+    });
+    $('#emo-use').addEventListener('click', () => {
+      const v = firstGrapheme($('#emo-input').value);
+      if (v && emoPick) emoPick(v);
+    });
+    $('#emo-auto').addEventListener('click', () => { if (emoPick) emoPick(null); });
+    $('#emo-cancel').addEventListener('click', () => closeDialog(dlg));
+  }
+
   /** Referme la fenêtre en la faisant redescendre. */
-  function closeDialog() {
-    const dlg = $('#dlg');
+  function closeDialog(dlg = $('#dlg')) {
     if (!dlg.open || dlg.classList.contains('closing')) return;
     if (!motionOK()) { dlg.close(); return; }
     dlg.classList.add('closing');
@@ -1244,23 +1361,24 @@
   function followKeyboard() {
     const vv = window.visualViewport;
     if (!vv) return;
-    const dlg = $('#dlg');
     const place = () => {
       const hidden = Math.max(0, window.innerHeight - vv.height - vv.offsetTop);
-      dlg.style.setProperty('--kb', `${hidden}px`);
+      for (const dlg of $$('dialog')) dlg.style.setProperty('--kb', `${hidden}px`);
     };
     vv.addEventListener('resize', place);
     vv.addEventListener('scroll', place);
   }
 
   function bindDialog() {
-    const dlg = $('#dlg');
     followKeyboard();
-    dlg.addEventListener('cancel', (e) => { e.preventDefault(); closeDialog(); }); // touche Échap
-    dlg.addEventListener('click', (e) => { // toucher en dehors de la fenêtre
-      const r = dlg.getBoundingClientRect();
-      if (e.target === dlg && (e.clientY < r.top || e.clientY > r.bottom || e.clientX < r.left || e.clientX > r.right)) closeDialog();
-    });
+    bindEmoji();
+    for (const d of $$('dialog')) {
+      d.addEventListener('cancel', (e) => { e.preventDefault(); closeDialog(d); }); // touche Échap
+      d.addEventListener('click', (e) => { // toucher en dehors de la fenêtre
+        const r = d.getBoundingClientRect();
+        if (e.target === d && (e.clientY < r.top || e.clientY > r.bottom || e.clientX < r.left || e.clientX > r.right)) closeDialog(d);
+      });
+    }
     $('#dlg-form').addEventListener('submit', (e) => {
       e.preventDefault();
       if ((e.submitter && e.submitter.value === 'cancel') || !dlgSave) { closeDialog(); return; }
@@ -1284,7 +1402,7 @@
     $('#view-settings').innerHTML = `
       <section class="block">
         <h2 class="sec">Ce que vous recevez <span class="muted" id="t-income"></span></h2>
-        <p class="note">Les montants habituels. Vous pouvez les corriger chaque mois dans « Budget du mois ».</p>
+        <p class="note">Les montants habituels. Touchez un emoji pour le changer ; appuyez longuement dessus puis glissez pour changer l’ordre.</p>
         ${editorHTML('income', state.incomes, { ...o, ...DAY.income, placeholder: 'Nom de la rentrée' })}
       </section>
 
@@ -1341,9 +1459,9 @@
       const rc = readEditor(root, 'cat', { what: 'Dépenses de tous les jours' });
       if (rc.error) return err(rc.error);
       const before = { incomes: new Map(state.incomes.map((x) => [x.id, x.amount])), fixed: new Map(state.fixed.map((x) => [x.id, x.amount])), cats: new Map(state.categories.map((c) => [c.id, catMonthly(c)])) };
-      state.incomes = ri.items.map(({ id, name, amount, day }) => ({ id, name, amount, day }));
-      state.fixed = rf.items.map(({ id, name, amount, day }) => ({ id, name, amount, day }));
-      state.categories = rc.items.map(({ id, name, color, per, amount }, i) => ({ id, name, color: color || PALETTE[i % PALETTE.length], per, amount }));
+      state.incomes = ri.items.map(({ id, name, amount, day, emoji }) => ({ id, name, amount, day, emoji }));
+      state.fixed = rf.items.map(({ id, name, amount, day, emoji }) => ({ id, name, amount, day, emoji }));
+      state.categories = rc.items.map(({ id, name, color, per, amount, emoji }, i) => ({ id, name, color: color || PALETTE[i % PALETTE.length], per, amount, emoji }));
       state.currency = $('#set-currency', root).value;
       // Le budget du mois en cours suit les montants habituels qui viennent de changer.
       const rec = state.months[currentMonth()];

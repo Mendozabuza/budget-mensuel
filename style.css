@@ -306,9 +306,9 @@ legend { font-size: 14px; color: var(--muted); margin-bottom: 10px; padding: 0; 
 
 /* Éditeur de lignes (rentrées, dépenses fixes, budgets) */
 .editor { border-top: 0; }
-.erow { display: flex; align-items: center; gap: 10px; min-height: 52px; border-bottom: 1px solid var(--line); }
+.erow { display: flex; align-items: center; gap: 8px; min-height: 52px; border-bottom: 1px solid var(--line); }
 .erow .e-name { flex: 1; min-width: 0; border: 0; background: none; padding: 12px 0; outline: none; }
-.erow .money { width: 112px; flex: none; padding: 8px 10px; border-radius: 8px; background: var(--soft); }
+.erow .money { width: 92px; flex: none; padding: 8px 10px; border-radius: 8px; background: var(--soft); }
 .erow .money:focus-within { outline: 1.5px solid var(--text); }
 .erow input[type="checkbox"] { width: 22px; height: 22px; margin: 0; accent-color: var(--text); flex: none; }
 .erow.off .e-name, .erow.off .money { opacity: .4; }
@@ -321,6 +321,21 @@ legend { font-size: 14px; color: var(--muted); margin-bottom: 10px; padding: 0; 
 .e-per { max-width: 100%; padding: 6px 26px 6px 10px; border: 0; border-radius: 8px; background: var(--soft); font-size: 14px; -webkit-appearance: none; appearance: none; background-image: linear-gradient(45deg, transparent 50%, var(--muted) 50%), linear-gradient(135deg, var(--muted) 50%, transparent 50%); background-position: calc(100% - 13px) 50%, calc(100% - 8px) 50%; background-size: 5px 5px; background-repeat: no-repeat; }
 .erow .e-cat .money { width: 84px; padding: 6px 10px; }
 .erow.off .e-cat { opacity: .4; }
+.erow { -webkit-user-select: none; user-select: none; -webkit-touch-callout: none; }
+.erow input { -webkit-user-select: text; user-select: text; }
+.e-emo { width: 38px; height: 38px; flex: none; display: grid; place-items: center; padding: 0; border: 0; border-radius: 10px; background: var(--soft); font-size: 22px; line-height: 1; -webkit-touch-callout: none; touch-action: none; }
+.erow.off .e-emo { opacity: .4; }
+.erow.dragging { position: relative; z-index: 2; background: var(--bg); box-shadow: 0 8px 24px rgba(0, 0, 0, .25); border-radius: 12px; transform: scale(1.03); transition: transform .15s; }
+.emo { display: inline-block; width: 1.4em; text-align: center; }
+
+.emo-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(44px, 1fr)); gap: 4px; margin: 16px 0 12px; }
+.emo-grid button { height: 44px; padding: 0; border: 0; border-radius: 10px; background: none; font-size: 26px; line-height: 1; }
+.emo-grid button.on { background: var(--soft); outline: 1.5px solid var(--text); }
+.emo-grid button:active { background: var(--tap); }
+.emo-own { display: flex; gap: 8px; align-items: center; }
+.emo-own input { flex: 1; min-width: 0; padding: 10px 12px; border: 0; border-radius: 10px; background: var(--soft); font-size: 20px; outline: none; }
+.emo-own .btn { width: auto; margin: 0; padding: 10px 16px; }
+#emo .btn.ghost { margin-top: 6px; }
 .e-del { width: 36px; height: 36px; display: grid; place-items: center; flex: none; margin-right: -8px; background: none; border: 0; border-radius: 50%; color: var(--muted); }
 .e-del svg { width: 18px; height: 18px; }
 .e-del:active { background: var(--tap); }

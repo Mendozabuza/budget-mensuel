@@ -73,6 +73,18 @@
     </form>
   </dialog>
 
+  <!-- Choix d’un emoji pour une ligne -->
+  <dialog id="emo" aria-labelledby="emo-title">
+    <h2 id="emo-title">Choisir un emoji</h2>
+    <div class="emo-grid" id="emo-grid"></div>
+    <div class="emo-own">
+      <input id="emo-input" placeholder="Ou tapez-en un" autocomplete="off" aria-label="Taper un emoji">
+      <button type="button" class="btn" id="emo-use">Utiliser</button>
+    </div>
+    <button type="button" class="btn ghost" id="emo-auto">Automatique (selon le nom)</button>
+    <button type="button" class="btn ghost" id="emo-cancel">Annuler</button>
+  </dialog>
+
   <input type="file" id="import-file" accept="application/json,.json" hidden>
   <div id="toast" class="toast" role="status" aria-live="polite"></div>
 
