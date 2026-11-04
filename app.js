@@ -627,8 +627,22 @@
     });
 
     // Appui long sur une ligne (ailleurs que dans un champ), puis glisser : change l’ordre.
+    // La ligne se soulève et suit le doigt ; les autres glissent pour lui faire de la place.
     let press = null, drag = null, dragged = false;
     const cancelPress = () => { if (press) clearTimeout(press.timer); press = null; };
+    const place = () => { drag.row.style.transform = `translateY(${drag.dy}px) scale(1.03)`; };
+    const slide = (row, fromTop) => {
+      const d = fromTop - row.offsetTop;
+      if (d) animate(row, [{ transform: `translateY(${d}px)` }, { transform: 'none' }], { duration: 220 });
+    };
+    /** Échange la ligne déplacée avec sa voisine, sans que la ligne ne saute sous le doigt. */
+    const swap = (other, before) => {
+      const top = drag.row.offsetTop;
+      const otherTop = other.offsetTop;
+      if (before) box.insertBefore(drag.row, other); else box.insertBefore(other, drag.row);
+      drag.startY += drag.row.offsetTop - top;
+      slide(other, otherTop);
+    };
     box.addEventListener('pointerdown', (e) => {
       dragged = false;
       const row = e.target.closest('.erow');
@@ -639,8 +653,11 @@
         y: e.clientY,
         timer: setTimeout(() => {
           press = null;
-          drag = row;
+          drag = { row, startY: e.clientY, y: e.clientY, dy: 0 };
           row.classList.add('dragging');
+          place();
+          animate(row, [{ transform: 'none' }, { transform: 'scale(1.03)' }], { duration: 160 });
+          if (navigator.vibrate) navigator.vibrate(10);
           try { box.setPointerCapture(id); } catch { /* pointeur déjà relâché */ }
         }, 350),
       };
@@ -648,14 +665,33 @@
     box.addEventListener('pointermove', (e) => {
       if (press && Math.hypot(e.clientX - press.x, e.clientY - press.y) > 8) cancelPress();
       if (!drag) return;
-      const next = $$('.erow', box).find((r) => r !== drag && e.clientY < r.getBoundingClientRect().top + r.offsetHeight / 2);
-      if (next ? drag.nextElementSibling !== next : box.lastElementChild !== drag) box.insertBefore(drag, next || null);
+      // Près du bas ou du haut de l’écran, la page défile toute seule.
+      const edge = e.clientY > window.innerHeight - 110 ? 8 : e.clientY < 90 ? -8 : 0;
+      if (edge) {
+        const y0 = window.scrollY;
+        window.scrollBy(0, edge);
+        drag.startY -= window.scrollY - y0;
+      }
+      drag.dy = e.clientY - drag.startY;
+      const center = () => drag.row.offsetTop + drag.row.offsetHeight / 2 + drag.dy;
+      for (;;) {
+        const next = drag.row.nextElementSibling;
+        const prev = drag.row.previousElementSibling;
+        if (next && center() > next.offsetTop + next.offsetHeight / 2) swap(next, false);
+        else if (prev && center() < prev.offsetTop + prev.offsetHeight / 2) swap(prev, true);
+        else break;
+        drag.dy = e.clientY - drag.startY;
+      }
+      place();
     });
     const drop = () => {
       cancelPress();
       if (!drag) return;
-      drag.classList.remove('dragging');
+      const { row, dy } = drag;
       drag = null;
+      row.style.transform = '';
+      row.classList.remove('dragging');
+      animate(row, [{ transform: `translateY(${dy}px) scale(1.03)` }, { transform: 'none' }], { duration: 200 });
       dragged = true; // pas d’ouverture du choix d’emoji au relâchement
       onChange();
     };
