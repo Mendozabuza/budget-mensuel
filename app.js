@@ -234,6 +234,8 @@
       plan: Object.prototype.hasOwnProperty.call(PLANS, d.plan) ? d.plan : null,
       planMonth: isMonth(d.planMonth) ? d.planMonth : null,
       lastBackup: isValidISODate(d.lastBackup) ? d.lastBackup : null,
+      bank: d.bank && Number.isInteger(d.bank.amount) && Math.abs(d.bank.amount) < 1e11 && isValidISODate(d.bank.date)
+        ? { amount: d.bank.amount, date: d.bank.date } : null,
     };
   }
 
@@ -299,6 +301,35 @@
       remaining: incomeTotal - fixedTotal - varSpent - savedNet,
       margin: recurringIncome - fixedTotal - varPlanned - state.savingsTarget,
     };
+  }
+
+  /**
+   * Solde du compte estimé : dernier solde indiqué, plus ce qui s’est passé depuis
+   * (opérations notées, rentrées et prélèvements datés). Le jour même d’un prélèvement
+   * compte encore comme « à venir », comme dans la liste « À venir ce mois-ci ».
+   */
+  function bankEstimate() {
+    const b = state.bank;
+    if (!b) return null;
+    const today = todayISO();
+    const cm = currentMonth();
+    const sign = { income: 1, withdrawal: 1, expense: -1, saving: -1 };
+    let now = b.amount;
+    for (const t of state.transactions) if (t.date > b.date && t.date <= today) now += sign[t.type] * t.amount;
+    let later = 0;
+    let undated = false;
+    for (let m = b.date.slice(0, 7); m <= cm; m = shiftMonth(m, 1)) {
+      for (const [list, k] of [[state.incomes, 1], [state.fixed, -1]]) {
+        for (const { item, amount } of recurringFor(list, m)) {
+          if (!item.day) { undated ||= amount > 0; continue; }
+          const due = `${m}-${pad(dayIn(item, m))}`;
+          if (due <= b.date) continue;
+          if (due < today) now += k * amount;
+          else if (m === cm) later += k * amount;
+        }
+      }
+    }
+    return { now, end: now + later, date: b.date, undated };
   }
 
   function savingsTotal() {
@@ -881,6 +912,7 @@
       rules: {},
       seenRefs: [],
       lastBackup: null,
+      bank: null,
     };
     if (!save()) return;
     ui.draft = null;
@@ -1146,6 +1178,31 @@
       </section>`;
   }
 
+  function bankHTML() {
+    const e = bankEstimate();
+    if (!e) {
+      return `
+        <div class="tip">
+          <p>Voir aussi l’argent sur votre compte : entrez le solde affiché par votre banque.</p>
+          <button type="button" class="link inline" data-bank-edit>Ajouter</button>
+        </div>`;
+    }
+    const age = daysSince(e.date);
+    const since = age === 0 ? 'indiqué aujourd’hui' : `estimé d’après le solde du ${esc(shortDate(e.date))} et ce que vous avez noté depuis`;
+    return `
+      <section class="bank">
+        <div class="line"><span>Sur votre compte aujourd’hui</span><span class="num${e.now < 0 ? ' neg' : ''}">${money(e.now)}</span></div>
+        ${e.end !== e.now ? `<div class="line bank-end"><span>Après les rentrées et prélèvements à venir</span><span class="num${e.end < 0 ? ' neg' : ''}">${money(e.end)}</span></div>` : ''}
+        <p class="note">Solde ${since}.${age >= 14 ? ' Pensez à le mettre à jour.' : ''}${e.undated ? ' Les rentrées et dépenses fixes sans date ne sont pas comptées.' : ''}
+          <button type="button" class="link inline" data-bank-edit>Mettre à jour</button></p>
+      </section>`;
+  }
+
+  function shortDate(iso) {
+    const [y, m, d] = iso.split('-').map(Number);
+    return new Date(y, m - 1, d).toLocaleDateString('fr-FR', { day: 'numeric', month: 'long' });
+  }
+
   function renderMonth() {
     const m = ui.month;
     const cm = currentMonth();
@@ -1202,6 +1259,8 @@
       </section>
 
       ${stackHTML(s)}
+
+      ${isCur ? bankHTML() : ''}
 
       ${isCur ? backupTipHTML() : ''}
 
@@ -1269,6 +1328,7 @@
     $$('.rec', view).forEach((b) => b.addEventListener('click', () => openRecurring(b.dataset.kind, b.dataset.id)));
     bindGo(view);
     $$('[data-backup]', view).forEach((b) => b.addEventListener('click', exportData));
+    $$('[data-bank-edit]', view).forEach((b) => b.addEventListener('click', openBank));
   }
 
   function bindGo(root) {
@@ -1302,6 +1362,8 @@
       return;
     }
     dlgTarget = { item, month: m };
+    $('#dlg-always').hidden = false;
+    $('#dlg-neg-wrap').hidden = true;
     $('#dlg-title').textContent = item.name;
     $('#dlg-text').textContent = `Montant habituel : ${money(item.amount)}. Mettez 0 si rien n’est prévu ce mois-ci.`;
     $('#dlg-amount').value = centsToInput(current);
@@ -1310,6 +1372,44 @@
     $('#dlg-month').textContent = `Pour ${monthName(m)} seulement`;
     $('#dlg-always').textContent = `Pour tous les mois dès ${monthName(m)}`;
     dlg.showModal();
+  }
+
+  /** Fenêtre « Solde de votre compte ». */
+  function openBank() {
+    const dlg = $('#dlg');
+    const b = state.bank;
+    if (typeof dlg.showModal !== 'function') {
+      const v = prompt('Solde de votre compte aujourd’hui (ex. : 850 ou -120)', b ? centsToInput(b.amount) : '');
+      if (v === null) return;
+      setBank(v.trim().replace(/^[−-]/, ''), /^[−-]/.test(v.trim()));
+      return;
+    }
+    dlgTarget = { bank: true };
+    $('#dlg-title').textContent = 'Solde de votre compte';
+    $('#dlg-text').textContent = 'Le montant affiché aujourd’hui dans l’app de votre banque. L’app le fera évoluer avec ce que vous notez. Laissez vide pour ne plus l’afficher.';
+    $('#dlg-amount').value = b ? centsToInput(Math.abs(b.amount)) : '';
+    $('#dlg-neg').checked = !!b && b.amount < 0;
+    $('#dlg-neg-wrap').hidden = false;
+    $('#dlg .cur').textContent = currencySymbol();
+    $('#dlg-error').textContent = '';
+    $('#dlg-month').textContent = 'Enregistrer';
+    $('#dlg-always').hidden = true;
+    dlg.showModal();
+  }
+
+  /** Enregistre le solde ; renvoie un message d’erreur ou ''. */
+  function setBank(raw, negative) {
+    if (!raw) {
+      state.bank = null;
+    } else {
+      const amount = parseAmount(raw);
+      if (Number.isNaN(amount)) return 'Montant invalide (exemple : 850,40).';
+      state.bank = { amount: negative ? -amount : amount, date: todayISO() };
+    }
+    save();
+    toast(state.bank ? 'Solde enregistré' : 'Solde retiré');
+    render();
+    return '';
   }
 
   function setOverride(item, month, amount) {
@@ -1359,6 +1459,15 @@
       e.preventDefault();
       const choice = e.submitter ? e.submitter.value : 'month';
       if (choice === 'cancel' || !dlgTarget) { closeDialog(); return; }
+      if (dlgTarget.bank) {
+        const raw = $('#dlg-amount').value.trim().replace(/^[−-]/, '');
+        const negative = $('#dlg-neg').checked || /^[−-]/.test($('#dlg-amount').value.trim());
+        if (raw && Number.isNaN(parseAmount(raw))) { $('#dlg-error').textContent = 'Montant invalide (exemple : 850,40).'; return; }
+        closeDialog();
+        dlgTarget = null;
+        setBank(raw, negative);
+        return;
+      }
       const amount = readMoneyInput($('#dlg-amount'));
       if (Number.isNaN(amount)) { $('#dlg-error').textContent = 'Montant invalide (exemple : 12,50).'; return; }
       const { item, month } = dlgTarget;
